@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `match_player` lists the stats behind the end-of-match awards, among them crates broken, damage by
+  bullets, abilities and melee, and headshots.
 - Players: find an account by Steam name, SteamID64 or profile link; a player's rank, win rate,
   heroes, teammates, opponents, where on the map they die and kill, and whether the API receives
   their matches.
@@ -22,3 +24,7 @@ All notable changes to this project are documented here. The format is based on
 - The `review_match` prompt, hero resources with name completion, and a match resource template.
 - Answers list their sources and flag stale copies; errors are RFC 9457 problems.
 - The catalog follows the newest game version the Deadlock API has processed.
+- Deaths in `match_player` and hotspots in `player_deaths_map` name the objective they are near,
+  e.g. "The Archmother's York Guardian"; `match_player` gives the net worth at each stats snapshot.
+- `performance_curve`: the average player's net worth, K/D/A, damage and souls by source over a
+  match, and `stat_percentiles`: percentiles of per-match stats, both by hero, rank and period.

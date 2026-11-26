@@ -35,7 +35,7 @@ Data flows down this list: a module uses only the ones above it.
 | `src/http.rs` | GET with the disk cache, `ETag` revalidation, stale fallback, per-host pacing, one retry |
 | `src/problem.rs` | RFC 9457 problems; every kind has a section in `docs/errors.md` |
 | `src/sources/` | One typed function per upstream endpoint, with its cache lifetime |
-| `src/domain/` | Game knowledge: the catalog (heroes, items, ranks, lanes) for the newest game version, names for Valve's enums, a player's own result, text helpers |
+| `src/domain/` | Game knowledge: the catalog (heroes, items, ranks, lanes, named places on the map) for the newest game version, names for Valve's enums, a player's own result, text helpers |
 | `src/tools/` | What each tool does, and its answer types |
 | `src/server/` | The MCP surface: one tool router per area (player, matches, meta, game), resources, completion, the instructions and the prompt |
 | `xtask/` | The generators behind `cargo xtask contracts`, `manifest` and `server-json` |

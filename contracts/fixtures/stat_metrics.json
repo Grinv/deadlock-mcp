@@ -1,0 +1,67 @@
+{
+ "net_worth_per_min": {
+  "avg": 1150.235860989866,
+  "std": 166.01235964918888,
+  "percentile1": 776.0,
+  "percentile5": 888.0,
+  "percentile10": 940.0,
+  "percentile25": 1032.0,
+  "percentile50": 1144.0,
+  "percentile75": 1256.0,
+  "percentile90": 1360.0,
+  "percentile95": 1416.0,
+  "percentile99": 1552.0
+ },
+ "kills": {
+  "avg": 6.025143316906366,
+  "std": 3.477882504824786,
+  "percentile1": 0.0,
+  "percentile5": 1.0,
+  "percentile10": 2.0,
+  "percentile25": 3.0,
+  "percentile50": 6.0,
+  "percentile75": 8.0,
+  "percentile90": 11.0,
+  "percentile95": 12.0,
+  "percentile99": 16.0
+ },
+ "deaths": {
+  "avg": 6.7836417580207184,
+  "std": 3.1135732950384503,
+  "percentile1": 1.0,
+  "percentile5": 2.0,
+  "percentile10": 3.0,
+  "percentile25": 5.0,
+  "percentile50": 7.0,
+  "percentile75": 9.0,
+  "percentile90": 11.0,
+  "percentile95": 12.0,
+  "percentile99": 15.0
+ },
+ "accuracy": {
+  "avg": 0.5660664244148703,
+  "std": 0.06392402930325278,
+  "percentile1": 0.412109375,
+  "percentile5": 0.45703125,
+  "percentile10": 0.482421875,
+  "percentile25": 0.51953125,
+  "percentile50": 0.56640625,
+  "percentile75": 0.609375,
+  "percentile90": 0.64453125,
+  "percentile95": 0.6640625,
+  "percentile99": 0.703125
+ },
+ "first_permanent_buff_time_s": {
+  "avg": 266.85263104914816,
+  "std": 121.50925419554785,
+  "percentile1": 181.0,
+  "percentile5": 183.0,
+  "percentile10": 185.0,
+  "percentile25": 193.0,
+  "percentile50": 215.0,
+  "percentile75": 280.0,
+  "percentile90": 448.0,
+  "percentile95": 532.0,
+  "percentile99": 692.0
+ }
+}

@@ -458,6 +458,8 @@ pub struct Hotspot {
     /// Center of a 1024-unit square, in the map coordinates `match_player` gives death positions in.
     pub x: i32,
     pub y: i32,
+    /// The objective within about 50 m of the center, if any.
+    pub near: Option<String>,
     pub deaths: i64,
     pub kills: i64,
 }
@@ -507,11 +509,15 @@ pub fn deaths_map(
     let spots = |by_deaths: bool| -> Vec<Hotspot> {
         let mut v: Vec<Hotspot> = squares
             .iter()
-            .map(|(&(x, y), &(deaths, kills))| Hotspot {
-                x: x * HOTSPOT + HOTSPOT / 2,
-                y: y * HOTSPOT + HOTSPOT / 2,
-                deaths,
-                kills,
+            .map(|(&(x, y), &(deaths, kills))| {
+                let (x, y) = (x * HOTSPOT + HOTSPOT / 2, y * HOTSPOT + HOTSPOT / 2);
+                Hotspot {
+                    x,
+                    y,
+                    near: cat.near(f64::from(x), f64::from(y)),
+                    deaths,
+                    kills,
+                }
             })
             .filter(|s| if by_deaths { s.deaths > 0 } else { s.kills > 0 })
             .collect();

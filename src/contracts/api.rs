@@ -383,6 +383,18 @@ pub struct AbilityVideos {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub webm: ::std::option::Option<::std::string::String>,
 }
+///`Accolade`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct Accolade {
+    pub class_name: ::std::string::String,
+    pub description: ::std::string::String,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub enabled_game_modes: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    pub flavor_name: ::std::string::String,
+    pub id: i64,
+    pub threshold_type: ::std::string::String,
+    pub tracked_stat_name: ::std::string::String,
+}
 ///`AnalyticsAbilityOrderStats`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct AnalyticsAbilityOrderStats {
@@ -2449,6 +2461,19 @@ pub struct LeaderboardEntry {
     them empty for about half of the entries. See more: <https://api.deadlock-api.com/v1/assets/heroes>*/
     pub top_hero_ids: ::std::vec::Vec<i64>,
 }
+///The `/v1/assets/map` response.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct MapData {
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub entities: ::std::option::Option<MapEntities>,
+    pub images: MapImages,
+    ///Neutral camps (build 6711+).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub neutral_camps: ::std::option::Option<::std::vec::Vec<NeutralCamp>>,
+    pub objective_positions: ::std::collections::HashMap<::std::string::String, ObjectivePosition>,
+    pub radius: i64,
+    pub zipline_paths: ::std::vec::Vec<ZiplanePath>,
+}
 ///A district / building label pair shown on the map (build 6711+).
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct MapDistrict {
@@ -2464,6 +2489,106 @@ pub struct MapDistrict {
     ///Localized district name, e.g. `Theater`.
     pub district_name: ::std::string::String,
 }
+///Interactable map entities by category, extracted from the map entity lump.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
+pub struct MapEntities {
+    ///Base defense sentries (`npc_base_defense_sentry`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub base_sentries: ::std::vec::Vec<MapEntity>,
+    ///Chinatown bells (`citadel_breakable_bell_chinatown`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub bells: ::std::vec::Vec<MapEntity>,
+    ///Bounce pads (`trigger_catapult`); `target` is the landing spot.
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub bounce_pads: ::std::vec::Vec<MapEntity>,
+    ///Bridge buff spawners (`citadel_item_powerup_spawner`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub bridge_buffs: ::std::vec::Vec<MapEntity>,
+    ///Climbable ropes (`citadel_trigger_climb_rope`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub climb_ropes: ::std::vec::Vec<MapEntity>,
+    ///Cosmic veils (`citadel_passthrough_fake_wall`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub cosmic_veils: ::std::vec::Vec<MapEntity>,
+    ///Breakable wooden crates (`citadel_breakable_prop_wooden_crate` and variants).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub crates: ::std::vec::Vec<MapEntity>,
+    ///Golden statues (`citadel_breakable_item_container`, `citadel_breakable_lion_statue`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub golden_statues: ::std::vec::Vec<MapEntity>,
+    ///Healing snack spawners (`citadel_pickup_spawner`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub healing_snacks: ::std::vec::Vec<MapEntity>,
+    ///Item shops (`trigger_item_shop`); `kind` is `base`, `lane` or `secret`.
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub shops: ::std::vec::Vec<MapEntity>,
+    ///Soul urn delivery pads (`citadel_trigger_idol_return`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub soul_urn_pads: ::std::vec::Vec<MapEntity>,
+    ///Soul urn spawn points (`item_crate_spawn`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub soul_urn_spawns: ::std::vec::Vec<MapEntity>,
+    /**Steam vents (`citadel_invis_volume`, plus `citadel_obscured_volume` with
+    `kind` `obscured`).*/
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub steam_vents: ::std::vec::Vec<MapEntity>,
+    ///Teleporters (`citadel_trigger_teleport`); `target` is the exit.
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub teleporters: ::std::vec::Vec<MapEntity>,
+    ///Breakable tough crates (`citadel_breakable_prop_tough_crate`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub tough_crates: ::std::vec::Vec<MapEntity>,
+    ///Unstable rift spawn points (`info_koth_spawn_location`).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub unstable_rifts: ::std::vec::Vec<MapEntity>,
+}
+/**An interactable map entity (crate, bounce pad, shop, ...). Deserialized from
+`map/entities.json`, which has no minimap position; that is filled in after.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct MapEntity {
+    ///Variant within the category, e.g. `wooden_crate` or `secret` (shops).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub kind: ::std::option::Option<::std::string::String>,
+    ///Position on the minimap, as fractions of its width/height.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub left_relative: ::std::option::Option<f64>,
+    /**World position `[x, y, z]`, same space as the zip-line splines. Brush
+    triggers (ropes, pads, veils, ...) are placed at their entity origin.*/
+    pub position: ::std::vec::Vec<f64>,
+    /**World position `[x, y, z]` the entity sends you to: the teleporter exit
+    or the bounce pad landing spot.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub target: ::std::option::Option<::std::vec::Vec<f64>>,
+    ///Owning team (0 or 1); absent for neutral entities.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub team: ::std::option::Option<i32>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub top_relative: ::std::option::Option<f64>,
+}
+///CDN URLs for the minimap image layers.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct MapImages {
+    /**Background layer drawn under `mid`. Only for builds before 6711; the game no longer
+    ships it, so it is omitted from build 6711 on.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub background: ::std::option::Option<::std::string::String>,
+    pub frame: ::std::string::String,
+    ///Midtown base layer.
+    pub mid: ::std::string::String,
+    ///Mid tunnels overlay, drawn above `mid` (build 6711+).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub mid_tunnels: ::std::option::Option<::std::string::String>,
+    /**Full minimap. From build 6711 on the game ships no composed minimap, so this is the
+    same image as `mid`: the midtown street layer as a black mask on transparency, meant
+    to be drawn over a base colour rather than shown on its own.*/
+    pub minimap: ::std::string::String,
+    /**Minimap without overlays. From build 6711 on this is the same street mask as `mid`
+    (see `minimap`).*/
+    pub plain: ::std::string::String,
+    ///Rat tunnels overlay, drawn above `mid_tunnels` (build 6711+).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub rat_tunnels: ::std::option::Option<::std::string::String>,
+}
 ///`MateStats`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct MateStats {
@@ -2472,6 +2597,33 @@ pub struct MateStats {
     pub mate_id: i64,
     pub wins: i64,
 }
+/**One metric's distribution over single matches. Every value is `null` (NaN) when no matching
+match has the metric, e.g. `first_permanent_buff_time_s` for matches before build 6712.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct MetricValues {
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub avg: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile1: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile10: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile25: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile5: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile50: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile75: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile90: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile95: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub percentile99: ::std::option::Option<f64>,
+    #[serde(deserialize_with = "::std::option::Option::deserialize")]
+    pub std: ::std::option::Option<f64>,
+}
 ///`MiniMapOffsets`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct MiniMapOffsets {
@@ -2479,6 +2631,80 @@ pub struct MiniMapOffsets {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub lane_index: ::std::option::Option<i64>,
     pub offset_2d: ::std::vec::Vec<f64>,
+}
+///A neutral camp ("Haunt") marker (build 6711+).
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct NeutralCamp {
+    ///Minimap icon URL.
+    pub icon: ::std::string::String,
+    pub kind: NeutralCampKind,
+    ///Position on the minimap, as fractions of its width/height.
+    pub left_relative: f64,
+    ///Camp entity name from the map (e.g. `theater_lobby_camp`).
+    pub name: ::std::string::String,
+    ///World position `[x, y, z]`, same space as the zip-line splines.
+    pub position: ::std::vec::Vec<f64>,
+    pub top_relative: f64,
+}
+/**Neutral camp strength (`info_neutral_trooper_camp` `subclass_name`
+`neutral_camp_{weak,medium,strong,vaults}` in `misc.vdata`).*/
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum NeutralCampKind {
+    #[serde(rename = "weak")]
+    Weak,
+    #[serde(rename = "medium")]
+    Medium,
+    #[serde(rename = "strong")]
+    Strong,
+    #[serde(rename = "vault")]
+    Vault,
+}
+impl ::std::fmt::Display for NeutralCampKind {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Weak => f.write_str("weak"),
+            Self::Medium => f.write_str("medium"),
+            Self::Strong => f.write_str("strong"),
+            Self::Vault => f.write_str("vault"),
+        }
+    }
+}
+impl ::std::str::FromStr for NeutralCampKind {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "weak" => Ok(Self::Weak),
+            "medium" => Ok(Self::Medium),
+            "strong" => Ok(Self::Strong),
+            "vault" => Ok(Self::Vault),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for NeutralCampKind {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for NeutralCampKind {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///`NewPlayerMetrics`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -2509,6 +2735,17 @@ pub struct ObjectiveParams {
     pub tier1_gold_orbs: i64,
     pub tier2_gold_kill: i64,
     pub tier2_gold_orbs: i64,
+}
+/**The top-left corner of an objective marker on the minimap, as fractions of
+its width/height (like a CSS `margin-left`/`margin-top`). The marker is a
+`Core` (30% x 8%) for the cores and an `Icon` (10% x 10%) otherwise, so its
+centre is this position plus half that size. Unlike `neutral_camps`, whose
+`left_relative`/`top_relative` are the point itself. Before build 6711 these
+are the HUD's schematic layout; from 6711 on they are real map positions.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ObjectivePosition {
+    pub left_relative: f64,
+    pub top_relative: f64,
 }
 ///`OutcomeToWeights`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -2574,6 +2811,364 @@ pub struct PlayerMatchHistoryEntry {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub ranked_used_demotion_protection: ::std::option::Option<bool>,
     pub start_time: i64,
+}
+///`PlayerPerformanceCurvePoint`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct PlayerPerformanceCurvePoint {
+    ///Average assists at this time point
+    pub assists_avg: f64,
+    ///Standard deviation of assists at this time point
+    pub assists_std: f64,
+    ///Average damage dealt to objectives at this time point
+    pub boss_damage_avg: f64,
+    ///Standard deviation of `boss_damage_avg` at this time point
+    pub boss_damage_std: f64,
+    ///Average objectives killed (last hits) at this time point
+    pub boss_kills_avg: f64,
+    ///Standard deviation of `boss_kills_avg` at this time point
+    pub boss_kills_std: f64,
+    ///Average damage dealt to lane creeps at this time point
+    pub creep_damage_avg: f64,
+    ///Standard deviation of `creep_damage_avg` at this time point
+    pub creep_damage_std: f64,
+    ///Average lane creeps killed (last hits) at this time point
+    pub creep_kills_avg: f64,
+    ///Standard deviation of `creep_kills_avg` at this time point
+    pub creep_kills_std: f64,
+    ///Average deaths at this time point
+    pub deaths_avg: f64,
+    ///Standard deviation of deaths at this time point
+    pub deaths_std: f64,
+    ///Average lane creeps denied at this time point
+    pub denies_avg: f64,
+    ///Standard deviation of `denies_avg` at this time point
+    pub denies_std: f64,
+    /**The time point of the data.
+    If `resolution` (default 10) is > 0, this is a percentage (0, 10, ..., 100).
+    If `resolution` is 0, this is the match time in seconds.*/
+    pub game_time: i64,
+    /**Where in the match the stats snapshots of this point were taken on average, in the
+    unit of `game_time`. Snapshots are taken every few minutes and at the end of the match,
+    so with `resolution` > 0 a point holds the snapshots from `game_time` up to the next
+    point and this is usually about half a bucket later than `game_time`. Percentages are
+    averaged from whole percents, so they can be off by a few tenths.*/
+    pub game_time_avg: f64,
+    ///Average souls earned from the Assassinate ability at this time point
+    pub gold_ability_assassinate_avg: f64,
+    ///Standard deviation of `gold_ability_assassinate_avg` at this time point
+    pub gold_ability_assassinate_std: f64,
+    ///Average souls earned from assists at this time point (part of `gold_player_avg`)
+    pub gold_assists_avg: f64,
+    ///Standard deviation of `gold_assists_avg` at this time point
+    pub gold_assists_std: f64,
+    ///Average souls earned from objectives at this time point
+    pub gold_boss_avg: f64,
+    ///Average souls earned from secured objective orbs at this time point
+    pub gold_boss_orb_avg: f64,
+    ///Standard deviation of `gold_boss_orb_avg` at this time point
+    pub gold_boss_orb_std: f64,
+    ///Standard deviation of `gold_boss_avg` at this time point
+    pub gold_boss_std: f64,
+    ///Average souls earned from breakables (crates, statues) at this time point
+    pub gold_breakable_avg: f64,
+    ///Standard deviation of `gold_breakable_avg` at this time point
+    pub gold_breakable_std: f64,
+    ///Average souls lost on death at this time point
+    pub gold_death_loss_avg: f64,
+    ///Standard deviation of `gold_death_loss_avg` at this time point
+    pub gold_death_loss_std: f64,
+    ///Average souls denied to enemies at this time point
+    pub gold_denied_avg: f64,
+    ///Standard deviation of `gold_denied_avg` at this time point
+    pub gold_denied_std: f64,
+    ///Average souls earned from the Cultist Sacrifice item at this time point
+    pub gold_item_cultist_sacrifice_avg: f64,
+    ///Standard deviation of `gold_item_cultist_sacrifice_avg` at this time point
+    pub gold_item_cultist_sacrifice_std: f64,
+    ///Average souls earned from the Golden Goose Egg item at this time point
+    pub gold_item_goose_egg_avg: f64,
+    ///Standard deviation of `gold_item_goose_egg_avg` at this time point
+    pub gold_item_goose_egg_std: f64,
+    ///Average souls earned from the Trophy Collector item at this time point
+    pub gold_item_trophy_collector_avg: f64,
+    ///Standard deviation of `gold_item_trophy_collector_avg` at this time point
+    pub gold_item_trophy_collector_std: f64,
+    ///Average souls earned from lane creeps at this time point
+    pub gold_lane_creep_avg: f64,
+    ///Average souls earned from secured lane-creep orbs at this time point
+    pub gold_lane_creep_orbs_avg: f64,
+    ///Standard deviation of `gold_lane_creep_orbs_avg` at this time point
+    pub gold_lane_creep_orbs_std: f64,
+    ///Standard deviation of `gold_lane_creep_avg` at this time point
+    pub gold_lane_creep_std: f64,
+    ///Average souls earned from neutral (jungle) creeps at this time point
+    pub gold_neutral_creep_avg: f64,
+    ///Average souls earned from secured neutral-creep orbs at this time point
+    pub gold_neutral_creep_orbs_avg: f64,
+    ///Standard deviation of `gold_neutral_creep_orbs_avg` at this time point
+    pub gold_neutral_creep_orbs_std: f64,
+    ///Standard deviation of `gold_neutral_creep_avg` at this time point
+    pub gold_neutral_creep_std: f64,
+    /**Average souls earned from hero kills at this time point, including assist souls
+    (see `gold_assists_avg`)*/
+    pub gold_player_avg: f64,
+    ///Average souls earned from secured hero-kill orbs at this time point
+    pub gold_player_orbs_avg: f64,
+    ///Standard deviation of `gold_player_orbs_avg` at this time point
+    pub gold_player_orbs_std: f64,
+    ///Standard deviation of `gold_player_avg` at this time point
+    pub gold_player_std: f64,
+    ///Average souls earned from the team bonus at this time point
+    pub gold_team_bonus_avg: f64,
+    ///Standard deviation of `gold_team_bonus_avg` at this time point
+    pub gold_team_bonus_std: f64,
+    ///Average souls earned from the urn at this time point
+    pub gold_treasure_avg: f64,
+    ///Standard deviation of `gold_treasure_avg` at this time point
+    pub gold_treasure_std: f64,
+    ///Average kills at this time point
+    pub kills_avg: f64,
+    ///Standard deviation of kills at this time point
+    pub kills_std: f64,
+    ///Average net worth at this time point
+    pub net_worth_avg: f64,
+    ///Standard deviation of net worth at this time point
+    pub net_worth_std: f64,
+    ///Average damage dealt to neutral (jungle) creeps at this time point
+    pub neutral_damage_avg: f64,
+    ///Standard deviation of `neutral_damage_avg` at this time point
+    pub neutral_damage_std: f64,
+    ///Average neutral (jungle) creeps killed at this time point
+    pub neutral_kills_avg: f64,
+    ///Standard deviation of `neutral_kills_avg` at this time point
+    pub neutral_kills_std: f64,
+    /**Average permanent buff (power-up) pickups collected up to this time point. Only
+    matches since build 6712 (2026-09-29) record pickup times, so only players with at
+    least one timed permanent pickup count; `null` when there are none.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub permanent_buffs_avg: ::std::option::Option<f64>,
+    /**Standard deviation of `permanent_buffs_avg` at this time point; `null` when there are
+    no players with timed permanent pickups.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub permanent_buffs_std: ::std::option::Option<f64>,
+    ///Average barrier (shield) provided at this time point
+    pub player_barriering_avg: f64,
+    ///Standard deviation of `player_barriering_avg` at this time point
+    pub player_barriering_std: f64,
+    ///Average damage dealt to enemy heroes at this time point
+    pub player_damage_avg: f64,
+    ///Standard deviation of `player_damage_avg` at this time point
+    pub player_damage_std: f64,
+    ///Average healing done at this time point
+    pub player_healing_avg: f64,
+    ///Standard deviation of `player_healing_avg` at this time point
+    pub player_healing_std: f64,
+    /**Number of stats snapshots (one per player per snapshot time) averaged in this point.
+    Each match has a snapshot at 100%, but only some matches have one in any earlier
+    bucket, and longer matches more often.*/
+    pub samples: i64,
+    ///Average self-inflicted damage at this time point
+    pub self_damage_avg: f64,
+    ///Standard deviation of `self_damage_avg` at this time point
+    pub self_damage_std: f64,
+}
+/**The metrics object: per metric, its distribution over single matches. The buff metrics
+(`permanent_buffs`, `permanent_buffs_per_min`, `first_permanent_buff_time_s`) are only present
+with `include_buff_metrics=true`.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(transparent)]
+pub struct PlayerStatsMetrics(pub ::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues>);
+impl ::std::ops::Deref for PlayerStatsMetrics {
+    type Target = ::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues>;
+    fn deref(&self) -> &::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues> {
+        &self.0
+    }
+}
+impl ::std::convert::From<PlayerStatsMetrics>
+    for ::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues>
+{
+    fn from(value: PlayerStatsMetrics) -> Self {
+        value.0
+    }
+}
+impl ::std::convert::From<::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues>>
+    for PlayerStatsMetrics
+{
+    fn from(value: ::std::collections::HashMap<PlayerStatsMetricsKey, MetricValues>) -> Self {
+        Self(value)
+    }
+}
+///`PlayerStatsMetricsKey`
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    schemars::JsonSchema,
+)]
+pub enum PlayerStatsMetricsKey {
+    #[serde(rename = "kills")]
+    Kills,
+    #[serde(rename = "deaths")]
+    Deaths,
+    #[serde(rename = "assists")]
+    Assists,
+    #[serde(rename = "net_worth")]
+    NetWorth,
+    #[serde(rename = "net_worth_per_min")]
+    NetWorthPerMin,
+    #[serde(rename = "denies")]
+    Denies,
+    #[serde(rename = "last_hits")]
+    LastHits,
+    #[serde(rename = "crit_shot_rate")]
+    CritShotRate,
+    #[serde(rename = "accuracy")]
+    Accuracy,
+    #[serde(rename = "kd")]
+    Kd,
+    #[serde(rename = "kda")]
+    Kda,
+    #[serde(rename = "kills_plus_assists")]
+    KillsPlusAssists,
+    #[serde(rename = "player_damage")]
+    PlayerDamage,
+    #[serde(rename = "player_damage_per_health")]
+    PlayerDamagePerHealth,
+    #[serde(rename = "player_damage_per_min")]
+    PlayerDamagePerMin,
+    #[serde(rename = "player_damage_taken_per_min")]
+    PlayerDamageTakenPerMin,
+    #[serde(rename = "neutral_damage")]
+    NeutralDamage,
+    #[serde(rename = "neutral_damage_per_min")]
+    NeutralDamagePerMin,
+    #[serde(rename = "boss_damage")]
+    BossDamage,
+    #[serde(rename = "boss_damage_per_min")]
+    BossDamagePerMin,
+    #[serde(rename = "self_healing")]
+    SelfHealing,
+    #[serde(rename = "player_healing")]
+    PlayerHealing,
+    #[serde(rename = "healing")]
+    Healing,
+    #[serde(rename = "self_healing_per_min")]
+    SelfHealingPerMin,
+    #[serde(rename = "player_healing_per_min")]
+    PlayerHealingPerMin,
+    #[serde(rename = "healing_per_min")]
+    HealingPerMin,
+    #[serde(rename = "teammate_healing")]
+    TeammateHealing,
+    #[serde(rename = "teammate_barriering")]
+    TeammateBarriering,
+    #[serde(rename = "heal_prevented")]
+    HealPrevented,
+    #[serde(rename = "permanent_buffs")]
+    PermanentBuffs,
+    #[serde(rename = "permanent_buffs_per_min")]
+    PermanentBuffsPerMin,
+    #[serde(rename = "first_permanent_buff_time_s")]
+    FirstPermanentBuffTimeS,
+}
+impl ::std::fmt::Display for PlayerStatsMetricsKey {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Kills => f.write_str("kills"),
+            Self::Deaths => f.write_str("deaths"),
+            Self::Assists => f.write_str("assists"),
+            Self::NetWorth => f.write_str("net_worth"),
+            Self::NetWorthPerMin => f.write_str("net_worth_per_min"),
+            Self::Denies => f.write_str("denies"),
+            Self::LastHits => f.write_str("last_hits"),
+            Self::CritShotRate => f.write_str("crit_shot_rate"),
+            Self::Accuracy => f.write_str("accuracy"),
+            Self::Kd => f.write_str("kd"),
+            Self::Kda => f.write_str("kda"),
+            Self::KillsPlusAssists => f.write_str("kills_plus_assists"),
+            Self::PlayerDamage => f.write_str("player_damage"),
+            Self::PlayerDamagePerHealth => f.write_str("player_damage_per_health"),
+            Self::PlayerDamagePerMin => f.write_str("player_damage_per_min"),
+            Self::PlayerDamageTakenPerMin => f.write_str("player_damage_taken_per_min"),
+            Self::NeutralDamage => f.write_str("neutral_damage"),
+            Self::NeutralDamagePerMin => f.write_str("neutral_damage_per_min"),
+            Self::BossDamage => f.write_str("boss_damage"),
+            Self::BossDamagePerMin => f.write_str("boss_damage_per_min"),
+            Self::SelfHealing => f.write_str("self_healing"),
+            Self::PlayerHealing => f.write_str("player_healing"),
+            Self::Healing => f.write_str("healing"),
+            Self::SelfHealingPerMin => f.write_str("self_healing_per_min"),
+            Self::PlayerHealingPerMin => f.write_str("player_healing_per_min"),
+            Self::HealingPerMin => f.write_str("healing_per_min"),
+            Self::TeammateHealing => f.write_str("teammate_healing"),
+            Self::TeammateBarriering => f.write_str("teammate_barriering"),
+            Self::HealPrevented => f.write_str("heal_prevented"),
+            Self::PermanentBuffs => f.write_str("permanent_buffs"),
+            Self::PermanentBuffsPerMin => f.write_str("permanent_buffs_per_min"),
+            Self::FirstPermanentBuffTimeS => f.write_str("first_permanent_buff_time_s"),
+        }
+    }
+}
+impl ::std::str::FromStr for PlayerStatsMetricsKey {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "kills" => Ok(Self::Kills),
+            "deaths" => Ok(Self::Deaths),
+            "assists" => Ok(Self::Assists),
+            "net_worth" => Ok(Self::NetWorth),
+            "net_worth_per_min" => Ok(Self::NetWorthPerMin),
+            "denies" => Ok(Self::Denies),
+            "last_hits" => Ok(Self::LastHits),
+            "crit_shot_rate" => Ok(Self::CritShotRate),
+            "accuracy" => Ok(Self::Accuracy),
+            "kd" => Ok(Self::Kd),
+            "kda" => Ok(Self::Kda),
+            "kills_plus_assists" => Ok(Self::KillsPlusAssists),
+            "player_damage" => Ok(Self::PlayerDamage),
+            "player_damage_per_health" => Ok(Self::PlayerDamagePerHealth),
+            "player_damage_per_min" => Ok(Self::PlayerDamagePerMin),
+            "player_damage_taken_per_min" => Ok(Self::PlayerDamageTakenPerMin),
+            "neutral_damage" => Ok(Self::NeutralDamage),
+            "neutral_damage_per_min" => Ok(Self::NeutralDamagePerMin),
+            "boss_damage" => Ok(Self::BossDamage),
+            "boss_damage_per_min" => Ok(Self::BossDamagePerMin),
+            "self_healing" => Ok(Self::SelfHealing),
+            "player_healing" => Ok(Self::PlayerHealing),
+            "healing" => Ok(Self::Healing),
+            "self_healing_per_min" => Ok(Self::SelfHealingPerMin),
+            "player_healing_per_min" => Ok(Self::PlayerHealingPerMin),
+            "healing_per_min" => Ok(Self::HealingPerMin),
+            "teammate_healing" => Ok(Self::TeammateHealing),
+            "teammate_barriering" => Ok(Self::TeammateBarriering),
+            "heal_prevented" => Ok(Self::HealPrevented),
+            "permanent_buffs" => Ok(Self::PermanentBuffs),
+            "permanent_buffs_per_min" => Ok(Self::PermanentBuffsPerMin),
+            "first_permanent_buff_time_s" => Ok(Self::FirstPermanentBuffTimeS),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for PlayerStatsMetricsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for PlayerStatsMetricsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///`Rank`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -3613,6 +4208,19 @@ impl ::std::convert::TryFrom<::std::string::String> for WeaponTag {
     ) -> ::std::result::Result<Self, self::error::ConversionError> {
         value.parse()
     }
+}
+///A single lane's zip-line cubic spline.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ZiplanePath {
+    pub color: ::std::string::String,
+    pub color_parsed: Color,
+    pub origin: ::std::vec::Vec<f64>,
+    #[serde(rename = "P0_points")]
+    pub p0_points: ::std::vec::Vec<::std::vec::Vec<f64>>,
+    #[serde(rename = "P1_points")]
+    pub p1_points: ::std::vec::Vec<::std::vec::Vec<f64>>,
+    #[serde(rename = "P2_points")]
+    pub p2_points: ::std::vec::Vec<::std::vec::Vec<f64>>,
 }
 /// Error types.
 pub mod error {

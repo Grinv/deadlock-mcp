@@ -1,0 +1,26 @@
+[
+ {
+  "class_name": "kills",
+  "id": 1,
+  "tracked_stat_name": "kills",
+  "flavor_name": "Killer Instinct",
+  "description": "<span class=\"StatValue\">{g:citadel_thousands:stat_value}</span> {stat_value, plural, one{kill} other{kills}}",
+  "threshold_type": "automatic"
+ },
+ {
+  "class_name": "assists",
+  "id": 2,
+  "tracked_stat_name": "assists",
+  "flavor_name": "Accomplished Accomplice",
+  "description": "<span class=\"StatValue\">{g:citadel_thousands:stat_value}</span> {stat_value, plural, one{assist} other{assists}}",
+  "threshold_type": "automatic"
+ },
+ {
+  "class_name": "healing",
+  "id": 3,
+  "tracked_stat_name": "healing",
+  "flavor_name": "The Doctor is In",
+  "description": "<span class=\"StatValue\">{g:citadel_thousands:stat_value}</span> healing",
+  "threshold_type": "automatic"
+ }
+]

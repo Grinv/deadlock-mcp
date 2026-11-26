@@ -50,6 +50,22 @@ pub fn generic_data(version: u32) -> Result<(api::GenericData, Source)> {
     )
 }
 
+/// The minimap: its radius, the objectives' marker positions and the lanes' zip lines.
+/// End-of-match awards: id, name and the stat each tracks.
+pub fn accolades(version: u32) -> Result<(Vec<api::Accolade>, Source)> {
+    get_json(
+        &format!("{API}/v1/assets/accolades?client_version={version}"),
+        ASSETS,
+    )
+}
+
+pub fn map(version: u32) -> Result<(api::MapData, Source)> {
+    get_json(
+        &format!("{API}/v1/assets/map?client_version={version}"),
+        ASSETS,
+    )
+}
+
 /// A finished match never changes. The API declares this response as a bare object; it is
 /// Valve's `CMsgMatchMetaDataContents` plus a few extra fields, which are ignored here.
 pub fn match_metadata(match_id: u64) -> Result<(valve::CMsgMatchMetaDataContents, Source)> {
@@ -177,6 +193,25 @@ pub fn ability_order_stats(
 ) -> Result<(Vec<api::AnalyticsAbilityOrderStats>, Source)> {
     get_json(
         &format!("{API}/v1/analytics/ability-order-stats?hero_id={hero_id}{filters}"),
+        ANALYTICS,
+    )
+}
+
+/// The average player's stats at each stats snapshot of a match (every 3 minutes up to 15:00,
+/// then every 5), in seconds of game time rather than shares of the match.
+pub fn performance_curve(filters: &str) -> Result<(Vec<api::PlayerPerformanceCurvePoint>, Source)> {
+    get_json(
+        &format!(
+            "{API}/v1/analytics/player-performance-curve?game_mode=normal&resolution=0{filters}"
+        ),
+        ANALYTICS,
+    )
+}
+
+/// Percentiles of per-match player stats; without `bucket` one object, metric by metric.
+pub fn stat_metrics(filters: &str) -> Result<(api::PlayerStatsMetrics, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/player-stats/metrics?game_mode=normal{filters}"),
         ANALYTICS,
     )
 }

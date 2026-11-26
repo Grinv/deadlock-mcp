@@ -34,10 +34,12 @@ Deadlock (Valve's hero shooter) statistics and game knowledge.
 - Hero, ability and item names come from game_lookup; mechanics and explanations from wiki_search and wiki_page (cite the page URL; the text is CC BY-NC-SA 4.0).
 - A hero's story is on the wiki page \"<Hero>/Lore\" (e.g. \"Kelvin/Lore\"); the hero page itself only links to it.
 - A player's own stats: player_heroes (per hero), player_mates (who they play with), player_enemies (who they meet and lose to), \
-player_deaths_map (where on the map they die and kill; positions as in match_player). ingest_status says whether the player \
+player_deaths_map (where on the map they die and kill; positions as in match_player, with the objective they are near). ingest_status says whether the player \
 runs the API's ingest tool; without it the API may miss some of their matches, so totals can be low.
 - The meta over all players: hero_stats (win and pick rate per hero), and for one hero hero_items (shop items), hero_counters \
-(enemies), hero_synergies (teammates) and ability_order. Filter them to a player's rank with min_badge/max_badge (the badge \
+(enemies), hero_synergies (teammates) and ability_order. performance_curve gives the average net worth, K/D/A and \
+souls by source at each stats snapshot of a match; stat_percentiles where a match's per-match stats (souls per minute, \
+K/D/A, damage, accuracy...) rank; its percentiles rank single matches, not players. Filter them to a player's rank with min_badge/max_badge (the badge \
 behind player_overview's rank) and say how many matches a rate rests on; small samples mislead.
 - builds lists in-game builds of a hero by popularity; leaderboard the top players of a region; patches the patch notes \
 (pass a patch's link for its text) to tell whether a stat predates a balance change.
@@ -53,8 +55,10 @@ how many souls sat unspent compared with the lobby, where and to whom they died,
 4. Compare with the meta at the player's rank (min_badge/max_badge around their badge): hero_items for their hero, \
 and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters \
 for their lane opponent. Mention the match counts behind the rates.
-5. If they died often, player_deaths_map with their hero shows whether those places are a habit.
-6. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them.";
+5. Compare their net worth over time (match_player) with performance_curve for their hero and rank, \
+and their souls per minute, K/D/A and damage with stat_percentiles for the same hero and rank.
+6. If they died often, player_deaths_map with their hero shows whether those places are a habit.
+7. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them.";
 
 pub(super) fn fail(problem: &Problem) -> CallToolResult {
     let mut result = CallToolResult::error(vec![ContentBlock::text(problem.message())]);
@@ -287,7 +291,15 @@ mod tests {
             text.split(|c: char| !(c.is_ascii_lowercase() || c == '_'))
                 .filter(|w| {
                     [
-                        "player_", "match_", "game_", "wiki_", "hero_", "ability_", "ingest_",
+                        "player_",
+                        "match_",
+                        "game_",
+                        "wiki_",
+                        "hero_",
+                        "ability_",
+                        "ingest_",
+                        "performance_",
+                        "stat_",
                     ]
                     .iter()
                     .any(|p| w.starts_with(p) && w.len() > p.len())

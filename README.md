@@ -22,8 +22,8 @@ Each tool answers one question; the assistant combines them.
 | Area | Tools |
 |---|---|
 | Players | `player_search` (account id from a Steam name, SteamID64 or profile link), `player_overview`, `player_heroes`, `player_mates`, `player_enemies`, `player_deaths_map`, `ingest_status` |
-| Matches | `match_summary`, `match_player` (souls by source, unspent souls, deaths with killers, purchases), `match_lanes` |
-| Meta | `hero_stats`, `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `builds`, `leaderboard`, `patches` |
+| Matches | `match_summary`, `match_player` (souls by source, unspent souls, deaths with killers and the nearest objective, purchases, award stats such as crates broken and damage by type), `match_lanes` |
+| Meta | `hero_stats`, `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `performance_curve` (the average net worth, K/D/A and souls by source over a match), `stat_percentiles` (where a match's stats rank), `builds`, `leaderboard`, `patches` |
 | Game | `game_lookup` (heroes, abilities and items with their tooltips), `wiki_search`, `wiki_page` |
 
 Meta tools take a rank range (`min_badge`, `max_badge`) and a period (`days`). Every win rate comes

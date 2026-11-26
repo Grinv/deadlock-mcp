@@ -8,9 +8,12 @@ use std::fmt::Write as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::contracts::api::{MetricValues, PlayerStatsMetricsKey as Metric};
+use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{bounded, date, mmss, plain};
 use crate::domain::items::ItemKind;
+use crate::domain::terms::gold_source_name;
 use crate::http::Source;
 use crate::problem::Result;
 use crate::sources::api;
@@ -505,6 +508,249 @@ pub fn leaderboard(region: Region, hero: Option<&str>, limit: u32) -> Result<Lea
                 top_heroes: e.top_hero_ids.iter().map(|&h| cat.hero(id32(h))).collect(),
             })
             .collect(),
+        sources: sources(source, &cat),
+    })
+}
+
+/// `&hero_ids=<id>` for an optional hero, and the hero's name for the answer.
+fn hero_filter(cat: &Catalog, hero: Option<&str>) -> Result<(String, Option<String>)> {
+    let id = hero.map(|h| cat.find_hero(h)).transpose()?;
+    Ok((
+        id.map_or_default(|h| format!("&hero_ids={h}")),
+        id.map(|h| cat.hero(h)),
+    ))
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CurveSouls {
+    pub source: &'static str,
+    /// Average souls from this source by then; orbs included (`match_player` lists them apart).
+    pub souls: f64,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CurvePoint {
+    /// Game time of the stats snapshot, `m:ss`; `match_lanes` and `match_player` use the same ones.
+    pub at: String,
+    /// Player snapshots averaged here (one per player per match that lasted this long).
+    pub samples: i64,
+    /// Average net worth (all souls collected) by then.
+    pub net_worth: f64,
+    /// Standard deviation of net worth; about two thirds of players are within it of the average.
+    pub net_worth_std: f64,
+    pub kills: f64,
+    pub deaths: f64,
+    pub assists: f64,
+    /// Lane troopers last-hit.
+    pub last_hits: f64,
+    pub denies: f64,
+    /// Damage dealt to enemy heroes.
+    pub hero_damage: f64,
+    pub healing: f64,
+    pub souls_lost_on_death: f64,
+    /// Largest first; sources averaging under one soul are left out.
+    pub souls_by_source: Vec<CurveSouls>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PerformanceCurve {
+    pub hero: Option<String>,
+    /// Averages over all players' matches, totals up to each stats snapshot (every 3 minutes up to
+    /// 15:00, then every 5). Times fewer than 5% of the matches reach are left out.
+    pub points: Vec<CurvePoint>,
+    pub sources: Vec<Source>,
+}
+
+pub fn performance_curve(hero: Option<&str>, filters: &Filters) -> Result<PerformanceCurve> {
+    let cat = catalog()?;
+    let (hero_query, hero) = hero_filter(&cat, hero)?;
+    let (rows, source) = api::performance_curve(&format!("{hero_query}{}", filters.query()))?;
+    let most = rows.iter().map(|p| p.samples).max().unwrap_or_default();
+    let points = rows
+        .iter()
+        .filter(|p| p.samples * 20 >= most)
+        .map(|p| {
+            let mut souls_by_source: Vec<CurveSouls> = [
+                (G::KEPlayers, p.gold_player_avg + p.gold_player_orbs_avg),
+                (
+                    G::KELaneCreeps,
+                    p.gold_lane_creep_avg + p.gold_lane_creep_orbs_avg,
+                ),
+                (
+                    G::KENeutrals,
+                    p.gold_neutral_creep_avg + p.gold_neutral_creep_orbs_avg,
+                ),
+                (G::KEBosses, p.gold_boss_avg + p.gold_boss_orb_avg),
+                (G::KETreasure, p.gold_treasure_avg),
+                (G::KEAssists, p.gold_assists_avg),
+                (G::KETeamBonus, p.gold_team_bonus_avg),
+                (G::KEBreakable, p.gold_breakable_avg),
+                (G::KEAbilityAssassinate, p.gold_ability_assassinate_avg),
+                (G::KEItemTrophyCollector, p.gold_item_trophy_collector_avg),
+                (G::KEItemCultistSacrifice, p.gold_item_cultist_sacrifice_avg),
+                (G::KEItemGooseEgg, p.gold_item_goose_egg_avg),
+            ]
+            .into_iter()
+            .filter(|(_, souls)| *souls >= 1.0)
+            .map(|(g, souls)| CurveSouls {
+                source: gold_source_name(g),
+                souls: round(souls, 0),
+            })
+            .collect();
+            souls_by_source.sort_by(|a, b| b.souls.total_cmp(&a.souls));
+            CurvePoint {
+                at: mmss(u64::try_from(p.game_time).unwrap_or_default()),
+                samples: p.samples,
+                net_worth: round(p.net_worth_avg, 0),
+                net_worth_std: round(p.net_worth_std, 0),
+                kills: round(p.kills_avg, 1),
+                deaths: round(p.deaths_avg, 1),
+                assists: round(p.assists_avg, 1),
+                last_hits: round(p.creep_kills_avg, 1),
+                denies: round(p.denies_avg, 1),
+                hero_damage: round(p.player_damage_avg, 0),
+                healing: round(p.player_healing_avg, 0),
+                souls_lost_on_death: round(p.gold_death_loss_avg, 0),
+                souls_by_source,
+            }
+        })
+        .collect();
+    Ok(PerformanceCurve {
+        hero,
+        points,
+        sources: sources(source, &cat),
+    })
+}
+
+/// The metrics `stat_percentiles` gives when none are asked for.
+const DEFAULT_METRICS: [Metric; 7] = [
+    Metric::NetWorthPerMin,
+    Metric::Kills,
+    Metric::Deaths,
+    Metric::Assists,
+    Metric::LastHits,
+    Metric::PlayerDamagePerMin,
+    Metric::Accuracy,
+];
+
+/// What a metric's values are; everything is per match.
+const fn metric_unit(m: Metric) -> &'static str {
+    match m {
+        Metric::Kills
+        | Metric::Deaths
+        | Metric::Assists
+        | Metric::KillsPlusAssists
+        | Metric::Denies
+        | Metric::LastHits => "count",
+        Metric::NetWorth => "souls",
+        Metric::NetWorthPerMin => "souls per minute",
+        Metric::CritShotRate => "share of hits that were crits (headshots), 0..1",
+        Metric::Accuracy => "share of shots that hit, 0..1",
+        Metric::Kd => "kills per death",
+        Metric::Kda => "kills and assists per death",
+        Metric::PlayerDamage => "damage to enemy heroes",
+        Metric::PlayerDamagePerHealth => "damage to enemy heroes per point of own health",
+        Metric::PlayerDamagePerMin => "damage to enemy heroes per minute",
+        Metric::PlayerDamageTakenPerMin => "damage taken from heroes per minute",
+        Metric::NeutralDamage => "damage to jungle neutrals",
+        Metric::NeutralDamagePerMin => "damage to jungle neutrals per minute",
+        Metric::BossDamage => "damage to objectives",
+        Metric::BossDamagePerMin => "damage to objectives per minute",
+        Metric::SelfHealing => "health healed on self",
+        Metric::PlayerHealing => "health healed on heroes",
+        Metric::Healing => "health healed",
+        Metric::SelfHealingPerMin => "health healed on self per minute",
+        Metric::PlayerHealingPerMin => "health healed on heroes per minute",
+        Metric::HealingPerMin => "health healed per minute",
+        Metric::TeammateHealing => "health healed on teammates",
+        Metric::TeammateBarriering => "barrier given to teammates",
+        Metric::HealPrevented => "enemy healing prevented",
+        Metric::PermanentBuffs => "permanent buffs picked up",
+        Metric::PermanentBuffsPerMin => "permanent buffs picked up per minute",
+        Metric::FirstPermanentBuffTimeS => "game time of the first permanent buff, seconds",
+    }
+}
+
+/// The value below which that share of single-match values lies, e.g. `p25` = 25th percentile.
+#[derive(Serialize, JsonSchema)]
+pub struct Percentiles {
+    pub p1: Option<f64>,
+    pub p5: Option<f64>,
+    pub p10: Option<f64>,
+    pub p25: Option<f64>,
+    pub p50: Option<f64>,
+    pub p75: Option<f64>,
+    pub p90: Option<f64>,
+    pub p95: Option<f64>,
+    pub p99: Option<f64>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct MetricRow {
+    pub metric: Metric,
+    pub unit: &'static str,
+    pub avg: Option<f64>,
+    /// `null` throughout when no match in the sample has the metric.
+    pub percentiles: Percentiles,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct StatPercentiles {
+    pub hero: Option<String>,
+    /// Each player's row in each match is one value, so the percentiles rank a single match, not
+    /// a player's average (which spreads much narrower). The API gives no match count.
+    pub metrics: Vec<MetricRow>,
+    pub sources: Vec<Source>,
+}
+
+pub fn stat_percentiles(
+    hero: Option<&str>,
+    metrics: &[Metric],
+    filters: &Filters,
+) -> Result<StatPercentiles> {
+    let cat = catalog()?;
+    let (mut query, hero) = hero_filter(&cat, hero)?;
+    let metrics = if metrics.is_empty() {
+        &DEFAULT_METRICS[..]
+    } else {
+        metrics
+    };
+    // The API leaves the buff metrics out unless asked.
+    if metrics.iter().any(|m| {
+        matches!(
+            m,
+            Metric::PermanentBuffs | Metric::PermanentBuffsPerMin | Metric::FirstPermanentBuffTimeS
+        )
+    }) {
+        query.push_str("&include_buff_metrics=true");
+    }
+    let (all, source) = api::stat_metrics(&format!("{query}{}", filters.query()))?;
+    let metrics = metrics
+        .iter()
+        .map(|&m| {
+            let v = all.get(&m);
+            let at = |f: fn(&MetricValues) -> Option<f64>| v.and_then(f).map(|x| round(x, 3));
+            MetricRow {
+                metric: m,
+                unit: metric_unit(m),
+                avg: at(|v| v.avg),
+                percentiles: Percentiles {
+                    p1: at(|v| v.percentile1),
+                    p5: at(|v| v.percentile5),
+                    p10: at(|v| v.percentile10),
+                    p25: at(|v| v.percentile25),
+                    p50: at(|v| v.percentile50),
+                    p75: at(|v| v.percentile75),
+                    p90: at(|v| v.percentile90),
+                    p95: at(|v| v.percentile95),
+                    p99: at(|v| v.percentile99),
+                },
+            }
+        })
+        .collect();
+    Ok(StatPercentiles {
+        hero,
+        metrics,
         sources: sources(source, &cat),
     })
 }

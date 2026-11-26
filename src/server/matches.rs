@@ -44,8 +44,8 @@ impl DeadlockServer {
         run(move || matches::summary(args.match_id)).await
     }
 
-    /// One player's match in depth: result and why, souls by source, unspent souls, deaths with killers and
-    /// positions, purchases and permanent buffs.
+    /// One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths
+    /// with killers, positions and the nearest objective, purchases and permanent buffs.
     #[tool(
         title = "Player in a match",
         input_schema = input_schema::<MatchPlayerArgs>(),

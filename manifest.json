@@ -34,7 +34,7 @@
       ],
       "description": "Review a player's match: result, lane, where the souls came from, deaths and purchases.",
       "name": "review_match",
-      "text": "Review their latest match (the first one player_overview lists) for the Deadlock player \"${arguments.player}\".\n1. Resolve the player with player_search if needed, then get the match id from player_overview.\n2. Call match_player and match_lanes; call match_summary for the whole lobby.\n3. Explain the result (and why it wasn't scored, if so), how the lane went, where the souls came from, how many souls sat unspent compared with the lobby, where and to whom they died, and what they bought when.\n4. Compare with the meta at the player's rank (min_badge/max_badge around their badge): hero_items for their hero, and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters for their lane opponent. Mention the match counts behind the rates.\n5. If they died often, player_deaths_map with their hero shows whether those places are a habit.\n6. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them."
+      "text": "Review their latest match (the first one player_overview lists) for the Deadlock player \"${arguments.player}\".\n1. Resolve the player with player_search if needed, then get the match id from player_overview.\n2. Call match_player and match_lanes; call match_summary for the whole lobby.\n3. Explain the result (and why it wasn't scored, if so), how the lane went, where the souls came from, how many souls sat unspent compared with the lobby, where and to whom they died, and what they bought when.\n4. Compare with the meta at the player's rank (min_badge/max_badge around their badge): hero_items for their hero, and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters for their lane opponent. Mention the match counts behind the rates.\n5. Compare their net worth over time (match_player) with performance_curve for their hero and rank, and their souls per minute, K/D/A and damage with stat_percentiles for the same hero and rank.\n6. If they died often, player_deaths_map with their hero shows whether those places are a habit.\n7. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them."
     }
   ],
   "prompts_generated": false,
@@ -99,7 +99,7 @@
       "name": "match_lanes"
     },
     {
-      "description": "One player's match in depth: result and why, souls by source, unspent souls, deaths with killers and\npositions, purchases and permanent buffs.",
+      "description": "One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths\nwith killers, positions and the nearest objective, purchases and permanent buffs.",
       "name": "match_player"
     },
     {
@@ -111,7 +111,11 @@
       "name": "patches"
     },
     {
-      "description": "Where on the map a player dies and kills most: hotspots in `match_player`'s map coordinates.",
+      "description": "The average player's course of a match: net worth, K/D/A, last hits, damage and souls by\nsource at each stats snapshot (every 3 minutes up to 15:00, then every 5).",
+      "name": "performance_curve"
+    },
+    {
+      "description": "Where on the map a player dies and kills most: hotspots in `match_player`'s map coordinates, with the\nobjective nearby.",
       "name": "player_deaths_map"
     },
     {
@@ -133,6 +137,10 @@
     {
       "description": "Find a player's account id by Steam name, `SteamID64` or profile link.",
       "name": "player_search"
+    },
+    {
+      "description": "Percentiles of per-match player stats (souls per minute, K/D/A, damage, accuracy...), to\nplace one match's numbers among all players' matches.",
+      "name": "stat_percentiles"
     },
     {
       "description": "The text of a Deadlock Wiki page, or of one of its sections.",

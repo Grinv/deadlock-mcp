@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{DeadlockServer, default_ten, input_schema, parse, run};
+use crate::contracts::api::PlayerStatsMetricsKey;
 use crate::tools::meta::{HeroSort, Region};
 use crate::tools::{Filters, game, meta};
 
@@ -172,6 +173,49 @@ pub struct LeaderboardArgs {
     pub limit: u32,
 }
 
+#[derive(Deserialize, JsonSchema, garde::Validate)]
+#[serde(deny_unknown_fields)]
+pub struct PerformanceCurveArgs {
+    /// Only matches of this hero: a name (or a unique part of it) or a hero id; all heroes when
+    /// left out.
+    #[garde(inner(length(chars, min = 1, max = 50)))]
+    pub hero: Option<String>,
+    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
+    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
+    #[garde(inner(range(max = 116)))]
+    pub min_badge: Option<u8>,
+    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
+    #[garde(inner(range(max = 116)))]
+    pub max_badge: Option<u8>,
+    /// Only matches of the last this many days; the last 30 days when left out.
+    #[garde(inner(range(min = 1, max = 365)))]
+    pub days: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema, garde::Validate)]
+#[serde(deny_unknown_fields)]
+pub struct StatPercentilesArgs {
+    /// Only matches of this hero: a name (or a unique part of it) or a hero id; all heroes when
+    /// left out.
+    #[garde(inner(length(chars, min = 1, max = 50)))]
+    pub hero: Option<String>,
+    /// The stats to give; when left out, the main ones (net worth per minute, kills, deaths,
+    /// assists, last hits, hero damage per minute, accuracy).
+    #[serde(default)]
+    #[garde(length(max = 32))]
+    pub metrics: Vec<PlayerStatsMetricsKey>,
+    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
+    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
+    #[garde(inner(range(max = 116)))]
+    pub min_badge: Option<u8>,
+    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
+    #[garde(inner(range(max = 116)))]
+    pub max_badge: Option<u8>,
+    /// Only matches of the last this many days; the last 30 days when left out.
+    #[garde(inner(range(min = 1, max = 365)))]
+    pub days: Option<u32>,
+}
+
 fn filters(min_badge: Option<u8>, max_badge: Option<u8>, days: Option<u32>) -> Filters {
     Filters {
         min_badge,
@@ -269,6 +313,38 @@ impl DeadlockServer {
         let a: AbilityOrderArgs = parse(raw)?;
         let f = filters(a.min_badge, a.max_badge, a.days);
         run(move || meta::ability_order(&a.hero, &f, a.min_matches, a.limit)).await
+    }
+
+    /// The average player's course of a match: net worth, K/D/A, last hits, damage and souls by
+    /// source at each stats snapshot (every 3 minutes up to 15:00, then every 5).
+    #[tool(
+        title = "Performance curve",
+        input_schema = input_schema::<PerformanceCurveArgs>(),
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
+    async fn performance_curve(
+        &self,
+        Parameters(raw): Parameters<rmcp::model::JsonObject>,
+    ) -> Result<Json<meta::PerformanceCurve>, CallToolResult> {
+        let a: PerformanceCurveArgs = parse(raw)?;
+        let f = filters(a.min_badge, a.max_badge, a.days);
+        run(move || meta::performance_curve(a.hero.as_deref(), &f)).await
+    }
+
+    /// Percentiles of per-match player stats (souls per minute, K/D/A, damage, accuracy...), to
+    /// place one match's numbers among all players' matches.
+    #[tool(
+        title = "Stat percentiles",
+        input_schema = input_schema::<StatPercentilesArgs>(),
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
+    async fn stat_percentiles(
+        &self,
+        Parameters(raw): Parameters<rmcp::model::JsonObject>,
+    ) -> Result<Json<meta::StatPercentiles>, CallToolResult> {
+        let a: StatPercentilesArgs = parse(raw)?;
+        let f = filters(a.min_badge, a.max_badge, a.days);
+        run(move || meta::stat_percentiles(a.hero.as_deref(), &a.metrics, &f)).await
     }
 
     /// Patch notes and news: the list, or one patch's notes as text.

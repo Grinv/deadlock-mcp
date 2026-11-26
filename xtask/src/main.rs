@@ -19,6 +19,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 /// Deadlock API response schemas the server reads; their dependencies are pulled in.
 const API_SCHEMAS: &[&str] = &[
+    "Accolade",
     "AnalyticsAbilityOrderStats",
     "AnalyticsHeroStats",
     "Build",
@@ -34,8 +35,11 @@ const API_SCHEMAS: &[&str] = &[
     "ItemStats",
     "KillDeathStats",
     "Leaderboard",
+    "MapData",
     "MateStats",
     "PlayerMatchHistoryEntry",
+    "PlayerPerformanceCurvePoint",
+    "PlayerStatsMetrics",
     "Rank",
     "RankResponse",
     "SteamProfile",
@@ -44,6 +48,10 @@ const API_SCHEMAS: &[&str] = &[
 /// Enums the API declares inline on a query parameter: `(path, parameter, type name)`. They are
 /// generated as named types deriving `JsonSchema`, so tool arguments offer the API's own values.
 const API_PARAMS: &[(&str, &str, &str)] = &[("/v1/builds", "build_language", "BuildLanguage")];
+
+/// Generated types that tool arguments take as they are (the metric names of
+/// `PlayerStatsMetrics`), so they derive `JsonSchema` as well.
+const API_ARGS: &[&str] = &["PlayerStatsMetricsKey"];
 
 /// The match metadata message and what it imports.
 const PROTO_ROOT: &str = "citadel_gcmessages_common.proto";
@@ -166,6 +174,12 @@ fn api(root: &Path) -> Result<()> {
             .map(|p| p["schema"].clone())
             .ok_or(format!("no parameter {param} on {path}"))?;
         defs.insert((*name).to_owned(), schema);
+        settings.with_patch(
+            name,
+            typify::TypeSpacePatch::default().with_derive("schemars::JsonSchema"),
+        );
+    }
+    for name in API_ARGS {
         settings.with_patch(
             name,
             typify::TypeSpacePatch::default().with_derive("schemars::JsonSchema"),

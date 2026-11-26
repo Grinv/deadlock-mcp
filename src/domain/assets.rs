@@ -1,6 +1,6 @@
 //! The game catalog from the Deadlock API's asset endpoints (built from the game files): heroes,
-//! items (abilities, shop items, weapons), rank names and lanes, all of the newest game version
-//! the API has processed. Parsed once per version and kept in memory.
+//! items (abilities, shop items, weapons), rank names, lanes and named places on the map, all of
+//! the newest game version the API has processed. Parsed once per version and kept in memory.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -11,6 +11,7 @@ use serde::Serialize;
 use crate::contracts::api;
 use crate::domain::format::strip_tags;
 use crate::domain::items::Item;
+use crate::domain::map;
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::sources::api as source;
@@ -43,6 +44,9 @@ pub struct Catalog {
     ranks: HashMap<i64, String>,
     /// By `assigned_lane`, the index into `lane_info`.
     lanes: Vec<(u32, Lane)>,
+    landmarks: Vec<map::Landmark>,
+    /// End-of-match awards by id.
+    accolades: HashMap<u32, api::Accolade>,
     pub sources: Vec<Source>,
 }
 
@@ -141,6 +145,16 @@ impl Catalog {
     pub fn lanes(&self) -> &[(u32, Lane)] {
         &self.lanes
     }
+
+    /// The objective within about 50 m of a world position (as in match data), e.g. "The
+    /// Archmother's York Guardian".
+    pub fn near(&self, x: f64, y: f64) -> Option<String> {
+        map::near(&self.landmarks, x, y)
+    }
+
+    pub fn accolade(&self, id: u32) -> Option<&api::Accolade> {
+        self.accolades.get(&id)
+    }
 }
 
 /// Levenshtein distance, for suggesting close names.
@@ -161,7 +175,7 @@ fn distance(a: &str, b: &str) -> usize {
     row[b.len()]
 }
 
-fn hex(c: &api::Color) -> String {
+pub(super) fn hex(c: &api::Color) -> String {
     let byte = |v: i32| u8::try_from(v.clamp(0, 255)).unwrap_or_default();
     format!(
         "#{:02X}{:02X}{:02X}",
@@ -233,7 +247,7 @@ fn load(version: u32) -> Result<Catalog> {
     // Unused slots have no color; the enemy-lane entry is a marker, not a lane.
     let (data, s) = source::generic_data(version)?;
     sources.push(s);
-    let lanes = data
+    let lanes: Vec<(u32, Lane)> = data
         .lane_info
         .into_iter()
         .enumerate()
@@ -248,6 +262,30 @@ fn load(version: u32) -> Result<Catalog> {
             ))
         })
         .collect();
+    // Place names are a nicety: without the map, positions stay bare.
+    let landmarks = match source::map(version) {
+        Ok((data, s)) => {
+            sources.push(s);
+            map::landmarks(&data, &lanes)
+        }
+        Err(problem) => {
+            eprintln!("deadlock-mcp: map: {}", problem.message());
+            Vec::new()
+        }
+    };
+    // Award names are a nicety too: without them a match still reads.
+    let accolades = match source::accolades(version) {
+        Ok((list, s)) => {
+            sources.push(s);
+            list.into_iter()
+                .filter_map(|a| Some((u32::try_from(a.id).ok()?, a)))
+                .collect()
+        }
+        Err(problem) => {
+            eprintln!("deadlock-mcp: accolades: {}", problem.message());
+            HashMap::new()
+        }
+    };
     Ok(Catalog {
         version,
         heroes,
@@ -255,6 +293,8 @@ fn load(version: u32) -> Result<Catalog> {
         items,
         ranks,
         lanes,
+        landmarks,
+        accolades,
         sources,
     })
 }
@@ -271,6 +311,8 @@ mod tests {
             items: HashMap::new(),
             ranks: HashMap::new(),
             lanes: Vec::new(),
+            landmarks: Vec::new(),
+            accolades: HashMap::new(),
             sources: Vec::new(),
         }
     }

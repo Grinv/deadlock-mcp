@@ -216,7 +216,15 @@ pub struct Death {
     pub time_to_kill_s: Option<f64>,
     /// Map position (x, y) of the death.
     pub position: Option<[i64; 2]>,
+    /// The objective within about 50 m of `position`, if any.
+    pub near: Option<String>,
     pub killer_position: Option<[i64; 2]>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct NetWorthAt {
+    pub at: String,
+    pub net_worth: u32,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -243,6 +251,8 @@ pub struct PlayerReport {
     pub deaths: u32,
     pub assists: u32,
     pub net_worth: u32,
+    /// At each stats snapshot, the times `performance_curve` averages; the last is the match end.
+    pub net_worth_over_time: Vec<NetWorthAt>,
     pub last_hits: u32,
     pub denies: u32,
     pub hero_damage: u32,
@@ -253,6 +263,10 @@ pub struct PlayerReport {
     pub unspent: Option<Unspent>,
     /// Permanent stat buffs picked up (golden statues and the urn), by type.
     pub permanent_buffs: HashMap<String, u32>,
+    /// Stats behind the end-of-match awards the game picked for this player. Some appear nowhere
+    /// else: crates broken (`breakables_destroyed`), damage by bullets, abilities or melee,
+    /// headshots. Players get different subsets, so a missing stat means "not picked", not zero.
+    pub awards: Vec<Award>,
     pub deaths_detail: Vec<Death>,
     pub purchases: Vec<Purchase>,
     pub sources: Vec<Source>,
@@ -310,7 +324,38 @@ fn deaths(cat: &Catalog, info: &MatchInfo, p: &Players) -> Vec<Death> {
                 .time_to_kill_s
                 .map(|t| (f64::from(t) * 10.0).round() / 10.0),
             position: position(d.death_pos.as_ref()),
+            near: d
+                .death_pos
+                .as_ref()
+                .and_then(|p| cat.near(f64::from(p.x?), f64::from(p.y?))),
             killer_position: position(d.killer_pos.as_ref()),
+        })
+        .collect()
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct Award {
+    /// The award's name in the game, e.g. "Championship Box-er".
+    pub name: String,
+    /// The stat it tracks, e.g. `breakables_destroyed`, `headshots`, `ability_damage`.
+    pub stat: String,
+    pub value: i32,
+    /// The tier the game reports; it doesn't document the scale, and most stats show -1.
+    pub tier: i32,
+}
+
+/// The player's award stats, named from the game's award list.
+fn awards(cat: &Catalog, p: &Players) -> Vec<Award> {
+    p.accolades
+        .iter()
+        .filter_map(|a| {
+            let info = cat.accolade(a.accolade_id())?;
+            Some(Award {
+                name: info.flavor_name.clone(),
+                stat: info.tracked_stat_name.clone(),
+                value: a.accolade_stat_value(),
+                tier: a.accolade_threshold_achieved(),
+            })
         })
         .collect()
 }
@@ -397,6 +442,14 @@ pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
         deaths: p.deaths(),
         assists: p.assists(),
         net_worth: p.net_worth(),
+        net_worth_over_time: p
+            .stats
+            .iter()
+            .map(|s| NetWorthAt {
+                at: mmss(u64::from(s.time_stamp_s())),
+                net_worth: s.net_worth(),
+            })
+            .collect(),
         last_hits: p.last_hits(),
         denies: p.denies(),
         hero_damage: stat.player_damage(),
@@ -406,6 +459,7 @@ pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
         souls_lost_on_death: stat.gold_death_loss(),
         unspent,
         permanent_buffs,
+        awards: awards(&cat, p),
         deaths_detail,
         purchases,
         sources: std::iter::once(source).chain(cat.stale_sources()).collect(),

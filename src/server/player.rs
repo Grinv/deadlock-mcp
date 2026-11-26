@@ -193,7 +193,8 @@ impl DeadlockServer {
         run(move || player::enemies(a.account_id, a.days, a.min_matches, a.limit)).await
     }
 
-    /// Where on the map a player dies and kills most: hotspots in `match_player`'s map coordinates.
+    /// Where on the map a player dies and kills most: hotspots in `match_player`'s map coordinates, with the
+    /// objective nearby.
     #[tool(
         title = "Player's death map",
         input_schema = input_schema::<PlayerDeathsMapArgs>(),

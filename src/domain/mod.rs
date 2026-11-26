@@ -3,5 +3,6 @@
 pub mod assets;
 pub mod format;
 pub mod items;
+pub mod map;
 pub mod outcome;
 pub mod terms;

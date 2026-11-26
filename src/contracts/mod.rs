@@ -82,6 +82,18 @@ mod tests {
             parse(include_str!("../../contracts/fixtures/patches.json"));
         assert_matches!(patches[0], api::FeedItem::ForumPatch { .. });
         assert_matches!(patches[1], api::FeedItem::SteamNews { .. });
+        let accolades: Vec<api::Accolade> =
+            parse(include_str!("../../contracts/fixtures/accolades.json"));
+        assert!(!accolades.is_empty());
+        let map: api::MapData = parse(include_str!("../../contracts/fixtures/map.json"));
+        assert!(map.objective_positions.contains_key("team1_tier1_1"));
+        let curve: Vec<api::PlayerPerformanceCurvePoint> = parse(include_str!(
+            "../../contracts/fixtures/performance_curve.json"
+        ));
+        assert_eq!(curve[0].game_time, 180);
+        let metrics: api::PlayerStatsMetrics =
+            parse(include_str!("../../contracts/fixtures/stat_metrics.json"));
+        assert!(metrics.contains_key(&api::PlayerStatsMetricsKey::NetWorthPerMin));
         let board: api::Leaderboard =
             parse(include_str!("../../contracts/fixtures/leaderboard.json"));
         assert!(!board.entries.is_empty());
