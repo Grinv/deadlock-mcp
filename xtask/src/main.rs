@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
+use std::mem::DropGuard;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -180,16 +181,21 @@ fn valve(root: &Path) -> Result<()> {
         .map(|d| root.join("contracts/protos").join(d))
         .collect();
     let fds = protox::compile([PROTO_ROOT], &dirs)?;
-    let out = std::env::temp_dir().join(format!("xtask-prost-{}", std::process::id()));
-    fs::create_dir_all(&out)?;
+    // Removed however this function returns, a failed generation included.
+    let out = DropGuard::new(
+        std::env::temp_dir().join(format!("xtask-prost-{}", std::process::id())),
+        |dir| {
+            let _ = fs::remove_dir_all(dir);
+        },
+    );
+    fs::create_dir_all(&*out)?;
     prost_build::Config::new()
-        .out_dir(&out)
+        .out_dir(&*out)
         .type_attribute(".", "#[derive(serde::Deserialize)]")
         .message_attribute(".", "#[serde(default)]")
         .compile_fds(fds)?;
     // The protos declare no package, so prost writes everything to `_.rs`.
     let code = fs::read_to_string(out.join("_.rs"))?;
-    fs::remove_dir_all(&out)?;
     write(root, "valve.rs", &(header("contracts/protos") + &code))
 }
 

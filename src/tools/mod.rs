@@ -6,7 +6,6 @@ pub mod meta;
 pub mod player;
 
 use std::fmt::Write as _;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Time and rank filters of the stats tools, as the API's query parameters.
 #[derive(Default)]
@@ -30,9 +29,7 @@ impl Filters {
             let _ = write!(q, "&max_average_badge={b}");
         }
         if let Some(days) = self.days {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs());
+            let now = crate::http::unix_now();
             let since = (now / 3600).saturating_sub(u64::from(days) * 24) * 3600;
             let _ = write!(q, "&min_unix_timestamp={since}");
         }

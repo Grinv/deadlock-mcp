@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Lint warnings of this workspace fail the build; dependencies' warnings don't.
+  CARGO_BUILD_WARNINGS: deny
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: "1.100"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component clippy,rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets --locked
+      - name: Generated contracts match contracts/
+        run: cargo xtask contracts && git diff --exit-code src/contracts
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "${{ env.RUSTUP_TOOLCHAIN }}" --profile minimal
+      - run: cargo test --workspace --locked

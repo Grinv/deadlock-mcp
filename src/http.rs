@@ -4,8 +4,9 @@
 //! (a 304 costs no body) and, when the request fails, served as is and marked `stale`. Errors are
 //! never cached. A 429/503 with a short `Retry-After` and a network error or 5xx are retried once.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Read as _;
+use std::mem::DropGuard;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,14 +27,13 @@ const MAX_RETRY_WAIT_S: u64 = 10;
 /// tightest documented limit (match metadata from storage, 100 per 10 s) and polite to the wiki.
 const MIN_GAP: Duration = Duration::from_millis(100);
 
-static NEXT_SLOT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+static NEXT_SLOT: Mutex<BTreeMap<String, Instant>> = Mutex::new(BTreeMap::new());
 
 /// Waits for this host's next free slot. The slot is taken under the lock, the wait happens
 /// outside it, so parallel tool calls queue up instead of bursting.
 fn pace(url: &str) {
     let now = Instant::now();
-    let start = NEXT_SLOT.lock().map_or(now, |mut guard| {
-        let slots = guard.get_or_insert_with(HashMap::new);
+    let start = NEXT_SLOT.lock().map_or(now, |mut slots| {
         let start = slots
             .get(host(url))
             .copied()
@@ -86,10 +86,11 @@ fn dir() -> PathBuf {
     base.join("deadlock-mcp")
 }
 
-fn now() -> u64 {
+/// Seconds since the Unix epoch.
+pub fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+        .map_or_default(|d| d.as_secs())
 }
 
 /// FNV-1a: a cache key that stays the same across Rust versions, unlike `DefaultHasher`.
@@ -271,7 +272,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
 
     let still_fresh = |meta: &Meta| match fresh {
         Fresh::Forever => true,
-        Fresh::For(ttl) => now().saturating_sub(meta.fetched_at) < ttl.as_secs(),
+        Fresh::For(ttl) => unix_now().saturating_sub(meta.fetched_at) < ttl.as_secs(),
     };
     if let Some((meta, body)) = cached.take_if(|(meta, _)| still_fresh(meta)) {
         return Ok((body, source(meta.fetched_at, true, false)));
@@ -289,7 +290,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
     }
     match result {
         Attempt::Body { etag, body } => {
-            let fetched_at = now();
+            let fetched_at = unix_now();
             save(
                 &meta_path,
                 &body_path,
@@ -304,7 +305,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         }
         Attempt::NotModified => match cached {
             Some((meta, body)) => {
-                let fetched_at = now();
+                let fetched_at = unix_now();
                 save(&meta_path, &body_path, &Meta { fetched_at, ..meta }, None);
                 Ok((body, source(fetched_at, true, false)))
             }
@@ -325,15 +326,21 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
 /// server processes share the cache.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let tmp = path.with_extension(format!(
-        "tmp-{}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    // Removes the temp file on every early return, including a write cut short (disk full).
+    let tmp = DropGuard::new(
+        path.with_extension(format!(
+            "tmp-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        )),
+        |tmp| {
+            let _ = std::fs::remove_file(tmp);
+        },
+    );
+    std::fs::write(&*tmp, bytes)?;
+    std::fs::rename(&*tmp, path)?;
+    DropGuard::dismiss(tmp);
+    Ok(())
 }
 
 /// A cache write that fails only costs a refetch, so it is not an error for the caller.
@@ -383,16 +390,16 @@ mod tests {
 
     #[test]
     fn paces_requests_per_host() {
+        // Lower bounds only: a slow CI runner may oversleep, never undersleep.
         let start = Instant::now();
         for _ in 0..3 {
             pace("https://pace.test/a");
         }
+        assert!(start.elapsed() >= MIN_GAP * 2, "{:?}", start.elapsed());
+        // Another host has its own slots: its first request doesn't wait.
+        let other = Instant::now();
         pace("https://other.test/b");
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed >= MIN_GAP * 2 && elapsed < MIN_GAP * 3,
-            "{elapsed:?}"
-        );
+        assert!(other.elapsed() < MIN_GAP, "{:?}", other.elapsed());
     }
 
     #[test]

@@ -164,7 +164,7 @@ pub fn summary(match_id: u64) -> Result<Summary> {
                     deaths: p.deaths(),
                     assists: p.assists(),
                     net_worth: p.net_worth(),
-                    hero_damage: last_stat(p).map_or(0, PlayerStats::player_damage),
+                    hero_damage: last_stat(p).map_or_default(PlayerStats::player_damage),
                     result: result_of(&info, p),
                     abandoned_at: left_at(p),
                     mvp: p.mvp_rank() == 1,
@@ -442,7 +442,7 @@ fn net_worth_at(p: &Players, t: u32) -> u32 {
         .iter()
         .rev()
         .find(|s| s.time_stamp_s() <= t)
-        .map_or(0, PlayerStats::net_worth)
+        .map_or_default(PlayerStats::net_worth)
 }
 
 pub fn lanes(match_id: u64) -> Result<MatchLanes> {

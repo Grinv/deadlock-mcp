@@ -3,16 +3,32 @@
 //! answers, so an upstream change shows up as a compile or parse error here, not as a silent zero.
 
 /// Deadlock API responses, from its `OpenAPI` spec.
-#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code, unused)]
+#[allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    dead_code,
+    dead_code_pub_in_binary,
+    unused
+)]
 pub mod api;
 /// Valve's protobuf messages; the Deadlock API serves match metadata as these in JSON.
-#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code, unused)]
+#[allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    dead_code,
+    dead_code_pub_in_binary,
+    unused
+)]
 pub mod valve;
 
 /// Real (trimmed) API answers parse into the generated types: catches a generator setting that
 /// produces types stricter than the published schema, which no compile error shows.
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::{api, valve};
 
     fn parse<T: serde::de::DeserializeOwned>(json: &str) -> T {
@@ -23,9 +39,9 @@ mod tests {
     #[test]
     fn api_fixtures_parse() {
         let items: Vec<api::Item> = parse(include_str!("../../contracts/fixtures/items.json"));
-        assert!(matches!(items[0], api::Item::Ability { .. }));
-        assert!(matches!(items[1], api::Item::Weapon { .. }));
-        assert!(matches!(items[2], api::Item::Upgrade { .. }));
+        assert_matches!(items[0], api::Item::Ability { .. });
+        assert_matches!(items[1], api::Item::Weapon { .. });
+        assert_matches!(items[2], api::Item::Upgrade { .. });
         let _: Vec<api::Hero> = parse(include_str!("../../contracts/fixtures/heroes.json"));
         let _: Vec<api::Rank> = parse(include_str!("../../contracts/fixtures/ranks.json"));
         let data: api::GenericData =
@@ -64,8 +80,8 @@ mod tests {
         ));
         let patches: Vec<api::FeedItem> =
             parse(include_str!("../../contracts/fixtures/patches.json"));
-        assert!(matches!(patches[0], api::FeedItem::ForumPatch { .. }));
-        assert!(matches!(patches[1], api::FeedItem::SteamNews { .. }));
+        assert_matches!(patches[0], api::FeedItem::ForumPatch { .. });
+        assert_matches!(patches[1], api::FeedItem::SteamNews { .. });
         let board: api::Leaderboard =
             parse(include_str!("../../contracts/fixtures/leaderboard.json"));
         assert!(!board.entries.is_empty());

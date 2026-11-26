@@ -1,2 +1,7 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# Dependency cooldown: the resolver skips crate versions published less than 7 days ago (unless
+# already in Cargo.lock), so a hijacked fresh release has time to be noticed and yanked.
+[registry]
+global-min-publish-age = "7 days"
