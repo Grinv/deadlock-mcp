@@ -4,63 +4,27 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::domain::assets::{Catalog, catalog};
-use crate::domain::format::{date, mmss};
+use crate::contracts::valve::ECitadelLobbyTeam;
+use crate::contracts::valve::c_msg_match_meta_data_contents::{
+    MatchInfo, PlayerStats, Players, Position,
+};
+use crate::domain::assets::{Catalog, ItemKind, Lane, catalog};
+use crate::domain::format::{date, mmss, plain};
 use crate::domain::outcome::{PlayerResult, note, player_result};
+use crate::domain::terms::{game_mode_name, gold_source_name, match_mode_name, team_name};
 use crate::http::Source;
 use crate::problem::{Kind, Problem, Result};
 use crate::sources::api;
 
-/// Lane ids as the game assigns them.
-const LANES: [(u64, &str); 3] = [(1, "Yellow"), (4, "Blue"), (6, "Green")];
-const TEAMS: [&str; 2] = ["The Hidden King", "The Archmother"];
+const TEAMS: [ECitadelLobbyTeam; 2] = [
+    ECitadelLobbyTeam::KECitadelLobbyTeamTeam0,
+    ECitadelLobbyTeam::KECitadelLobbyTeamTeam1,
+];
 /// Samples the per-player stats come in during the laning phase.
-const LANE_SAMPLES_S: [u64; 5] = [180, 360, 540, 720, 900];
+const LANE_SAMPLES_S: [u32; 5] = [180, 360, 540, 720, 900];
 
-fn u(v: &Value) -> u64 {
-    v.as_u64().unwrap_or(0)
-}
-
-fn team_name(team: u64) -> String {
-    usize::try_from(team)
-        .ok()
-        .and_then(|t| TEAMS.get(t))
-        .map_or_else(|| format!("team {team}"), |t| (*t).to_owned())
-}
-
-fn lane_name(lane: u64) -> String {
-    LANES
-        .iter()
-        .find(|(id, _)| *id == lane)
-        .map_or_else(|| format!("lane {lane}"), |(_, n)| (*n).to_owned())
-}
-
-/// `match_mode` and `game_mode` as the game numbers them.
-fn mode_name(match_mode: u64, game_mode: u64) -> String {
-    let mode = match match_mode {
-        1 => "Unranked",
-        2 => "Private lobby",
-        3 => "Bot match",
-        4 => "Ranked",
-        7 => "Hero Labs",
-        8 => "Placement",
-        _ => "Other",
-    };
-    if game_mode == 4 {
-        format!("Street Brawl ({mode})")
-    } else {
-        mode.to_owned()
-    }
-}
-
-struct Loaded {
-    info: Value,
-    source: Source,
-}
-
-fn load(match_id: u64) -> Result<Loaded> {
+fn load(match_id: u64) -> Result<(MatchInfo, Source)> {
     let (meta, source) = api::match_metadata(match_id).map_err(|p| {
         if p.kind == Kind::NotFound {
             Problem::not_found(format!(
@@ -72,70 +36,56 @@ fn load(match_id: u64) -> Result<Loaded> {
             p
         }
     })?;
-    let info = meta.get("match_info").cloned().ok_or_else(|| {
+    let info = meta.match_info.ok_or_else(|| {
         Problem::new(
             Kind::InvalidResponse,
             format!("match {match_id} has no match_info"),
         )
         .with_instance(source.url.clone())
     })?;
-    Ok(Loaded { info, source })
+    Ok((info, source))
 }
 
-fn players(info: &Value) -> &[Value] {
-    info["players"].as_array().map_or(&[], Vec::as_slice)
+fn last_stat(p: &Players) -> Option<&PlayerStats> {
+    p.stats.last()
 }
 
-fn last_stat(p: &Value) -> &Value {
-    p["stats"]
-        .as_array()
-        .and_then(|s| s.last())
-        .unwrap_or(&Value::Null)
-}
-
-fn result_of(info: &Value, p: &Value) -> PlayerResult {
+fn result_of(info: &MatchInfo, p: &Players) -> PlayerResult {
     player_result(
-        u(&p["player_match_outcome"]),
-        u(&p["team"]),
-        u(&info["winning_team"]),
+        p.player_match_outcome.unwrap_or_default(),
+        p.team() == info.winning_team(),
     )
 }
 
-fn left_at(p: &Value) -> Option<String> {
-    Some(u(&p["abandon_match_time_s"]))
+fn left_at(p: &Players) -> Option<String> {
+    Some(p.abandon_match_time_s())
         .filter(|&s| s > 0)
-        .map(mmss)
+        .map(|s| mmss(u64::from(s)))
 }
 
 /// Steam names of the match's players; an empty map when the lookup fails.
-fn steam_names(info: &Value) -> (HashMap<u64, String>, Option<Source>) {
-    let ids: Vec<u32> = players(info)
-        .iter()
-        .filter_map(|p| u32::try_from(u(&p["account_id"])).ok())
-        .collect();
+fn steam_names(info: &MatchInfo) -> (HashMap<u32, String>, Option<Source>) {
+    let ids: Vec<u32> = info.players.iter().map(Players::account_id).collect();
     match api::steam_profiles(&ids) {
         Ok((profiles, source)) => {
             let names = profiles
-                .as_array()
                 .into_iter()
-                .flatten()
-                .filter_map(|p| {
-                    Some((
-                        p["account_id"].as_u64()?,
-                        p["personaname"].as_str()?.to_owned(),
-                    ))
-                })
+                .filter_map(|p| Some((u32::try_from(p.account_id).ok()?, plain(&p.personaname))))
                 .collect();
             (names, Some(source))
         }
-        Err(_) => (HashMap::new(), None),
+        // Names are a nicety: the answer stands without them, so log and go on.
+        Err(problem) => {
+            eprintln!("deadlock-mcp: steam names: {}", problem.message());
+            (HashMap::new(), None)
+        }
     }
 }
 
-fn find_player(info: &Value, match_id: u64, account_id: u32) -> Result<&Value> {
-    players(info)
+fn find_player(info: &MatchInfo, match_id: u64, account_id: u32) -> Result<&Players> {
+    info.players
         .iter()
-        .find(|p| u(&p["account_id"]) == u64::from(account_id))
+        .find(|p| p.account_id() == account_id)
         .ok_or_else(|| {
             Problem::invalid_argument(format!(
                 "account {account_id} didn't play match {match_id}; match_summary lists its players"
@@ -143,19 +93,27 @@ fn find_player(info: &Value, match_id: u64, account_id: u32) -> Result<&Value> {
         })
 }
 
+fn mode(info: &MatchInfo) -> String {
+    format!(
+        "{} ({})",
+        match_mode_name(info.match_mode()),
+        game_mode_name(info.game_mode())
+    )
+}
+
 // ---- match_summary ----
 
 #[derive(Serialize, JsonSchema)]
 pub struct SummaryPlayer {
-    pub account_id: u64,
+    pub account_id: u32,
     pub steam_name: Option<String>,
     pub hero: String,
-    pub lane: String,
-    pub kills: u64,
-    pub deaths: u64,
-    pub assists: u64,
-    pub net_worth: u64,
-    pub hero_damage: u64,
+    pub lane: Lane,
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub net_worth: u32,
+    pub hero_damage: u32,
     /// This player's own result; differs from the team's when the game voided or penalized it.
     pub result: PlayerResult,
     /// Time the game flagged the player as having left (they may have reconnected).
@@ -165,7 +123,7 @@ pub struct SummaryPlayer {
 
 #[derive(Serialize, JsonSchema)]
 pub struct SummaryTeam {
-    pub team: String,
+    pub team: &'static str,
     pub won: bool,
     pub players: Vec<SummaryPlayer>,
 }
@@ -174,83 +132,69 @@ pub struct SummaryTeam {
 pub struct Summary {
     pub match_id: u64,
     pub date: String,
+    /// Match mode and game mode, e.g. "Ranked (Normal)".
     pub mode: String,
     pub duration: String,
-    pub winner: String,
+    pub winner: &'static str,
     pub teams: Vec<SummaryTeam>,
     pub sources: Vec<Source>,
 }
 
 pub fn summary(match_id: u64) -> Result<Summary> {
     let cat = catalog()?;
-    let Loaded { info, source } = load(match_id)?;
+    let (info, source) = load(match_id)?;
     let (names, names_source) = steam_names(&info);
-    let winner = u(&info["winning_team"]);
-    let teams = [0, 1]
+    let winner = info.winning_team();
+    let teams = TEAMS
         .into_iter()
         .map(|team| SummaryTeam {
             team: team_name(team),
             won: team == winner,
-            players: players(&info)
+            players: info
+                .players
                 .iter()
-                .filter(|p| u(&p["team"]) == team)
+                .filter(|p| p.team() == team)
                 .map(|p| SummaryPlayer {
-                    account_id: u(&p["account_id"]),
-                    steam_name: names.get(&u(&p["account_id"])).cloned(),
-                    hero: cat.hero(u(&p["hero_id"])),
-                    lane: lane_name(u(&p["assigned_lane"])),
-                    kills: u(&p["kills"]),
-                    deaths: u(&p["deaths"]),
-                    assists: u(&p["assists"]),
-                    net_worth: u(&p["net_worth"]),
-                    hero_damage: u(&last_stat(p)["player_damage"]),
+                    account_id: p.account_id(),
+                    steam_name: names.get(&p.account_id()).cloned(),
+                    hero: cat.hero(p.hero_id()),
+                    lane: cat.lane(p.assigned_lane()),
+                    kills: p.kills(),
+                    deaths: p.deaths(),
+                    assists: p.assists(),
+                    net_worth: p.net_worth(),
+                    hero_damage: last_stat(p).map_or(0, PlayerStats::player_damage),
                     result: result_of(&info, p),
                     abandoned_at: left_at(p),
-                    mvp: u(&p["mvp_rank"]) == 1,
+                    mvp: p.mvp_rank() == 1,
                 })
                 .collect(),
         })
         .collect();
     Ok(Summary {
         match_id,
-        date: date(info["start_time"].as_i64().unwrap_or(0)),
-        mode: mode_name(u(&info["match_mode"]), u(&info["game_mode"])),
-        duration: mmss(u(&info["duration_s"])),
+        date: date(i64::from(info.start_time())),
+        mode: mode(&info),
+        duration: mmss(u64::from(info.duration_s())),
         winner: team_name(winner),
         teams,
-        sources: [Some(source), names_source].into_iter().flatten().collect(),
+        sources: [Some(source), names_source]
+            .into_iter()
+            .flatten()
+            .chain(cat.stale_sources())
+            .collect(),
     })
 }
 
 // ---- match_player ----
 
-/// `EGoldSource` in Valve's match metadata.
-fn gold_source_name(source: u64) -> &'static str {
-    match source {
-        1 => "hero kills",
-        2 => "lane troopers",
-        3 => "jungle (neutrals)",
-        4 => "objectives and bosses",
-        5 => "urn and rift",
-        6 => "assists",
-        7 => "denies",
-        8 => "team bonus",
-        9 => "assassinate ability",
-        10 => "Trophy Collector",
-        11 => "Cultist Sacrifice",
-        12 => "breakables (crates)",
-        13 => "Golden Goose Egg",
-        _ => "other",
-    }
-}
-
 #[derive(Serialize, JsonSchema)]
 pub struct SoulSource {
     pub source: &'static str,
     /// Souls from kills and hits.
-    pub souls: u64,
+    pub souls: u32,
     /// Souls from orbs the player secured (lane troopers and neutrals drop them).
-    pub orbs: u64,
+    pub orbs: u32,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -278,7 +222,7 @@ pub struct Death {
 pub struct Purchase {
     pub item: String,
     pub slot: Option<String>,
-    pub tier: Option<u64>,
+    pub tier: Option<i32>,
     pub bought_at: String,
     pub sold_at: Option<String>,
 }
@@ -288,87 +232,131 @@ pub struct PlayerReport {
     pub match_id: u64,
     pub account_id: u32,
     pub hero: String,
-    pub team: String,
-    pub lane: String,
+    pub team: &'static str,
+    pub lane: Lane,
     pub result: PlayerResult,
     pub result_note: Option<&'static str>,
     pub abandoned_at: Option<String>,
     pub teammates_who_left: Vec<String>,
-    pub kills: u64,
-    pub deaths: u64,
-    pub assists: u64,
-    pub net_worth: u64,
-    pub last_hits: u64,
-    pub denies: u64,
-    pub hero_damage: u64,
-    pub damage_taken: u64,
-    pub healing: u64,
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub net_worth: u32,
+    pub last_hits: u32,
+    pub denies: u32,
+    pub hero_damage: u32,
+    pub damage_taken: u32,
+    pub healing: u32,
     pub souls_by_source: Vec<SoulSource>,
-    pub souls_lost_on_death: u64,
+    pub souls_lost_on_death: u32,
     pub unspent: Option<Unspent>,
     /// Permanent stat buffs picked up (golden statues and the urn), by type.
-    pub permanent_buffs: HashMap<String, u64>,
+    pub permanent_buffs: HashMap<String, u32>,
     pub deaths_detail: Vec<Death>,
     pub purchases: Vec<Purchase>,
     pub sources: Vec<Source>,
 }
 
 /// `custom_user_stats` values come as `{id, value}`; the names are listed once in `match_info`.
-fn custom_stat(info: &Value, stat: &Value, name: &str) -> Option<u64> {
-    let id = info["custom_user_stats"]
-        .as_array()?
+fn custom_stat(info: &MatchInfo, stat: &PlayerStats, name: &str) -> Option<u64> {
+    let id = info
+        .custom_user_stats
         .iter()
-        .find(|s| s["name"] == name)?["id"]
-        .as_u64()?;
-    stat["custom_user_stats"]
-        .as_array()?
+        .find(|s| s.name() == name)?
+        .id();
+    stat.custom_user_stats
         .iter()
-        .find(|s| s["id"].as_u64() == Some(id))?["value"]
-        .as_u64()
+        .find(|s| s.id() == id)
+        .map(|s| u64::from(s.value()))
 }
 
-fn unspent_per_minute(info: &Value, p: &Value) -> Option<u64> {
+fn unspent_per_minute(info: &MatchInfo, p: &Players) -> Option<u64> {
     // The stat sums unspent souls over time in soul-minutes; per minute of the stat's own span.
-    let stat = last_stat(p);
-    let seconds = u(&stat["time_stamp_s"]);
+    let stat = last_stat(p)?;
+    let seconds = u64::from(stat.time_stamp_s());
     (seconds > 0)
         .then(|| custom_stat(info, stat, "Unspent Gold Minutes").map(|v| v * 60 / seconds))
         .flatten()
 }
 
-fn position(v: &Value) -> Option<[i64; 2]> {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "map coordinates fit in i64 and need no fraction"
-    )]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "map coordinates fit in i64 and need no fraction"
+)]
+fn position(pos: Option<&Position>) -> Option<[i64; 2]> {
+    let pos = pos?;
     Some([
-        v["x"].as_f64()?.round() as i64,
-        v["y"].as_f64()?.round() as i64,
+        f64::from(pos.x?).round() as i64,
+        f64::from(pos.y?).round() as i64,
     ])
+}
+
+/// Each death with the killer's hero and both positions.
+fn deaths(cat: &Catalog, info: &MatchInfo, p: &Players) -> Vec<Death> {
+    let slot_hero: HashMap<u32, String> = info
+        .players
+        .iter()
+        .map(|q| (q.player_slot(), cat.hero(q.hero_id())))
+        .collect();
+    p.death_details
+        .iter()
+        .map(|d| Death {
+            at: mmss(u64::from(d.game_time_s())),
+            killer: d
+                .killer_player_slot
+                .and_then(|s| slot_hero.get(&s).cloned()),
+            time_to_kill_s: d
+                .time_to_kill_s
+                .map(|t| (f64::from(t) * 10.0).round() / 10.0),
+            position: position(d.death_pos.as_ref()),
+            killer_position: position(d.killer_pos.as_ref()),
+        })
+        .collect()
+}
+
+/// Shop items bought (abilities and weapons are left out), with buy and sell times.
+fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
+    p.items
+        .iter()
+        .filter_map(|i| {
+            let item = cat
+                .item(i.item_id())
+                .filter(|item| item.kind == ItemKind::Upgrade)?;
+            Some(Purchase {
+                item: item.name.clone(),
+                slot: item.slot.clone(),
+                tier: item.tier,
+                bought_at: mmss(u64::from(i.game_time_s())),
+                sold_at: Some(i.sold_time_s())
+                    .filter(|&s| s > 0)
+                    .map(|s| mmss(u64::from(s))),
+            })
+        })
+        .collect()
 }
 
 pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
     let cat = catalog()?;
-    let Loaded { info, source } = load(match_id)?;
+    let (info, source) = load(match_id)?;
     let p = find_player(&info, match_id, account_id)?;
-    let stat = last_stat(p);
-    let team = u(&p["team"]);
+    let no_stats = PlayerStats::default();
+    let stat = last_stat(p).unwrap_or(&no_stats);
 
-    let mut souls_by_source: Vec<SoulSource> = stat["gold_sources"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let mut souls_by_source: Vec<SoulSource> = stat
+        .gold_sources
+        .iter()
         .map(|g| SoulSource {
-            source: gold_source_name(u(&g["source"])),
-            souls: u(&g["gold"]),
-            orbs: u(&g["gold_orbs"]),
+            source: gold_source_name(g.source()),
+            souls: g.gold(),
+            orbs: g.gold_orbs(),
         })
         .filter(|s| s.souls + s.orbs > 0)
         .collect();
     souls_by_source.sort_by_key(|s| std::cmp::Reverse(s.souls + s.orbs));
 
     let unspent = unspent_per_minute(&info, p).map(|mine| {
-        let all: Vec<(u64, bool)> = players(&info)
+        let all: Vec<(u64, bool)> = info
+            .players
             .iter()
             .filter_map(|q| Some((unspent_per_minute(&info, q)?, left_at(q).is_some())))
             .collect();
@@ -380,87 +368,46 @@ pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
         }
     });
 
-    let slot_hero: HashMap<u64, String> = players(&info)
-        .iter()
-        .map(|q| (u(&q["player_slot"]), cat.hero(u(&q["hero_id"]))))
-        .collect();
-    let deaths_detail = p["death_details"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|d| Death {
-            at: mmss(u(&d["game_time_s"])),
-            killer: d["killer_player_slot"]
-                .as_u64()
-                .and_then(|s| slot_hero.get(&s).cloned()),
-            time_to_kill_s: d["time_to_kill_s"]
-                .as_f64()
-                .map(|t| (t * 10.0).round() / 10.0),
-            position: position(&d["death_pos"]),
-            killer_position: position(&d["killer_pos"]),
-        })
-        .collect();
+    let deaths_detail = deaths(&cat, &info, p);
 
-    let mut permanent_buffs: HashMap<String, u64> = HashMap::new();
-    for b in p["power_up_buffs"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|b| b["is_permanent"] == true)
-    {
-        *permanent_buffs
-            .entry(b["type"].as_str().unwrap_or("unknown").to_owned())
-            .or_default() += u(&b["value"]).max(1);
+    let mut permanent_buffs: HashMap<String, u32> = HashMap::new();
+    for b in p.power_up_buffs.iter().filter(|b| b.is_permanent()) {
+        *permanent_buffs.entry(b.r#type().to_owned()).or_default() += b.value().max(1);
     }
 
-    let purchases = p["items"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|i| {
-            let item = cat
-                .item(u(&i["item_id"]))
-                .filter(|item| item.kind == "upgrade")?;
-            Some(Purchase {
-                item: item.name.clone(),
-                slot: item.slot.clone(),
-                tier: item.tier,
-                bought_at: mmss(u(&i["game_time_s"])),
-                sold_at: Some(u(&i["sold_time_s"])).filter(|&s| s > 0).map(mmss),
-            })
-        })
-        .collect();
+    let purchases = purchases(&cat, p);
 
     Ok(PlayerReport {
         match_id,
         account_id,
-        hero: cat.hero(u(&p["hero_id"])),
-        team: team_name(team),
-        lane: lane_name(u(&p["assigned_lane"])),
+        hero: cat.hero(p.hero_id()),
+        team: team_name(p.team()),
+        lane: cat.lane(p.assigned_lane()),
         result: result_of(&info, p),
-        result_note: note(u(&p["player_match_outcome"])),
+        result_note: note(p.player_match_outcome.unwrap_or_default()),
         abandoned_at: left_at(p),
-        teammates_who_left: players(&info)
+        teammates_who_left: info
+            .players
             .iter()
-            .filter(|q| u(&q["team"]) == team && q["account_id"] != p["account_id"])
-            .filter_map(|q| left_at(q).map(|t| format!("{} at {t}", cat.hero(u(&q["hero_id"])))))
+            .filter(|q| q.team() == p.team() && q.account_id() != p.account_id())
+            .filter_map(|q| left_at(q).map(|t| format!("{} at {t}", cat.hero(q.hero_id()))))
             .collect(),
-        kills: u(&p["kills"]),
-        deaths: u(&p["deaths"]),
-        assists: u(&p["assists"]),
-        net_worth: u(&p["net_worth"]),
-        last_hits: u(&p["last_hits"]),
-        denies: u(&p["denies"]),
-        hero_damage: u(&stat["player_damage"]),
-        damage_taken: u(&stat["player_damage_taken"]),
-        healing: u(&stat["player_healing"]),
+        kills: p.kills(),
+        deaths: p.deaths(),
+        assists: p.assists(),
+        net_worth: p.net_worth(),
+        last_hits: p.last_hits(),
+        denies: p.denies(),
+        hero_damage: stat.player_damage(),
+        damage_taken: stat.player_damage_taken(),
+        healing: stat.player_healing(),
         souls_by_source,
-        souls_lost_on_death: u(&stat["gold_death_loss"]),
+        souls_lost_on_death: stat.gold_death_loss(),
         unspent,
         permanent_buffs,
         deaths_detail,
         purchases,
-        sources: vec![source],
+        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
     })
 }
 
@@ -474,69 +421,65 @@ pub struct LaneSample {
 }
 
 #[derive(Serialize, JsonSchema)]
-pub struct Lane {
-    pub lane: String,
+pub struct LaneReport {
+    pub lane: Lane,
     /// Heroes per team, in the order of `teams` in the answer.
     pub heroes: [Vec<String>; 2],
     pub soul_lead: Vec<LaneSample>,
 }
 
 #[derive(Serialize, JsonSchema)]
-pub struct Lanes {
+pub struct MatchLanes {
     pub match_id: u64,
-    pub teams: [String; 2],
-    pub lanes: Vec<Lane>,
+    pub teams: [&'static str; 2],
+    pub lanes: Vec<LaneReport>,
     pub sources: Vec<Source>,
 }
 
-fn net_worth_at(p: &Value, t: u64) -> u64 {
-    p["stats"]
-        .as_array()
-        .into_iter()
-        .flatten()
+fn net_worth_at(p: &Players, t: u32) -> u32 {
+    p.stats
+        .iter()
         .rev()
-        .find(|s| u(&s["time_stamp_s"]) <= t)
-        .map_or(0, |s| u(&s["net_worth"]))
+        .find(|s| s.time_stamp_s() <= t)
+        .map_or(0, PlayerStats::net_worth)
 }
 
-pub fn lanes(match_id: u64) -> Result<Lanes> {
+pub fn lanes(match_id: u64) -> Result<MatchLanes> {
     let cat: std::sync::Arc<Catalog> = catalog()?;
-    let Loaded { info, source } = load(match_id)?;
-    let duration = u(&info["duration_s"]);
-    let lanes = LANES
+    let (info, source) = load(match_id)?;
+    let duration = info.duration_s();
+    let lanes = cat
+        .lanes()
         .iter()
-        .map(|&(lane_id, name)| {
-            let in_lane = |team: u64| {
-                players(&info)
+        .map(|(lane_id, lane)| {
+            let in_lane = |team: ECitadelLobbyTeam| {
+                info.players
                     .iter()
-                    .filter(move |p| u(&p["assigned_lane"]) == lane_id && u(&p["team"]) == team)
+                    .filter(move |p| p.assigned_lane() == *lane_id && p.team() == team)
             };
-            let heroes =
-                [0, 1].map(|team| in_lane(team).map(|p| cat.hero(u(&p["hero_id"]))).collect());
-            let total = |team: u64, t: u64| -> i64 {
-                in_lane(team)
-                    .map(|p| i64::try_from(net_worth_at(p, t)).unwrap_or(0))
-                    .sum()
+            let heroes = TEAMS.map(|team| in_lane(team).map(|p| cat.hero(p.hero_id())).collect());
+            let total = |team: ECitadelLobbyTeam, t: u32| -> i64 {
+                in_lane(team).map(|p| i64::from(net_worth_at(p, t))).sum()
             };
             let soul_lead = LANE_SAMPLES_S
                 .iter()
                 .filter(|&&t| t <= duration)
                 .map(|&t| LaneSample {
-                    at: mmss(t),
-                    soul_lead: total(0, t) - total(1, t),
+                    at: mmss(u64::from(t)),
+                    soul_lead: total(TEAMS[0], t) - total(TEAMS[1], t),
                 })
                 .collect();
-            Lane {
-                lane: name.to_owned(),
+            LaneReport {
+                lane: lane.clone(),
                 heroes,
                 soul_lead,
             }
         })
         .collect();
-    Ok(Lanes {
+    Ok(MatchLanes {
         match_id,
-        teams: [team_name(0), team_name(1)],
+        teams: TEAMS.map(team_name),
         lanes,
-        sources: vec![source],
+        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
     })
 }

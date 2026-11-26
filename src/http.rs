@@ -4,9 +4,12 @@
 //! (a 304 costs no body) and, when the request fails, served as is and marked `stale`. Errors are
 //! never cached. A 429/503 with a short `Retry-After` and a network error or 5xx are retried once.
 
+use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,6 +22,28 @@ const MAX_BODY: u64 = 64 << 20;
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// Longer waits are left to the caller, with the time in the error.
 const MAX_RETRY_WAIT_S: u64 = 10;
+/// Spacing between requests to one host, at most 10 per second: under the Deadlock API's
+/// tightest documented limit (match metadata from storage, 100 per 10 s) and polite to the wiki.
+const MIN_GAP: Duration = Duration::from_millis(100);
+
+static NEXT_SLOT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+/// Waits for this host's next free slot. The slot is taken under the lock, the wait happens
+/// outside it, so parallel tool calls queue up instead of bursting.
+fn pace(url: &str) {
+    let now = Instant::now();
+    let start = NEXT_SLOT.lock().map_or(now, |mut guard| {
+        let slots = guard.get_or_insert_with(HashMap::new);
+        let start = slots
+            .get(host(url))
+            .copied()
+            .filter(|s| *s > now)
+            .unwrap_or(now);
+        slots.insert(host(url).to_owned(), start + MIN_GAP);
+        start
+    });
+    std::thread::sleep(start.saturating_duration_since(now));
+}
 
 #[derive(Clone, Copy)]
 pub enum Fresh {
@@ -115,6 +140,7 @@ fn upstream_detail(body: &[u8]) -> String {
 }
 
 fn attempt(url: &str, etag: Option<&str>) -> Attempt {
+    pace(url);
     let mut req = ureq::get(url).header("User-Agent", USER_AGENT);
     if let Some(etag) = etag {
         req = req.header("If-None-Match", etag);
@@ -154,7 +180,7 @@ fn attempt(url: &str, etag: Option<&str>) -> Attempt {
     if let Err(e) = resp
         .into_body()
         .into_reader()
-        .take(MAX_BODY)
+        .take(MAX_BODY + 1)
         .read_to_end(&mut body)
     {
         let problem =
@@ -164,13 +190,28 @@ fn attempt(url: &str, etag: Option<&str>) -> Attempt {
             retry_in: Some(Duration::from_secs(1)),
         };
     }
+    if body.len() as u64 > MAX_BODY {
+        return Attempt::Failed {
+            problem: Problem::new(
+                Kind::InvalidResponse,
+                format!("{} sent more than {} MiB", host(url), MAX_BODY >> 20),
+            )
+            .with_instance(url),
+            retry_in: None,
+        };
+    }
     if (200..300).contains(&status) {
         return Attempt::Body {
             etag: new_etag,
             body,
         };
     }
-    let detail = upstream_detail(&body);
+    failure(url, status, retry_after, &body)
+}
+
+/// What a non-2xx answer means for the caller, and whether one retry may help.
+fn failure(url: &str, status: u16, retry_after: Option<u64>, body: &[u8]) -> Attempt {
+    let detail = upstream_detail(body);
     let problem = |kind| {
         Problem::new(kind, detail.clone())
             .with_status(status)
@@ -216,7 +257,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         dir().join(format!("{key}.body")),
         dir().join(format!("{key}.json")),
     );
-    let cached = std::fs::read(&meta_path)
+    let mut cached = std::fs::read(&meta_path)
         .ok()
         .and_then(|m| serde_json::from_slice::<Meta>(&m).ok())
         .filter(|m| m.url == url)
@@ -228,14 +269,12 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         stale,
     };
 
-    if let Some((meta, body)) = &cached {
-        let still_fresh = match fresh {
-            Fresh::Forever => true,
-            Fresh::For(ttl) => now().saturating_sub(meta.fetched_at) < ttl.as_secs(),
-        };
-        if still_fresh {
-            return Ok((body.clone(), source(meta.fetched_at, true, false)));
-        }
+    let still_fresh = |meta: &Meta| match fresh {
+        Fresh::Forever => true,
+        Fresh::For(ttl) => now().saturating_sub(meta.fetched_at) < ttl.as_secs(),
+    };
+    if let Some((meta, body)) = cached.take_if(|(meta, _)| still_fresh(meta)) {
+        return Ok((body, source(meta.fetched_at, true, false)));
     }
 
     let etag = cached.as_ref().and_then(|(m, _)| m.etag.as_deref());
@@ -281,31 +320,80 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
     }
 }
 
+/// Readers see the old file or the new one, never a half-written one, even if the process dies
+/// mid-write. The temp name is unique per process and call, as parallel tool calls and several
+/// server processes share the cache.
+fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "tmp-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
 /// A cache write that fails only costs a refetch, so it is not an error for the caller.
 fn save(meta_path: &Path, body_path: &Path, meta: &Meta, body: Option<&[u8]>) {
     let write = || -> std::io::Result<()> {
         std::fs::create_dir_all(dir())?;
         if let Some(body) = body {
-            std::fs::write(body_path, body)?;
+            write_atomic(body_path, body)?;
         }
-        std::fs::write(meta_path, serde_json::to_vec(meta)?)
+        write_atomic(meta_path, &serde_json::to_vec(meta)?)
     };
     if let Err(e) = write() {
         eprintln!("deadlock-mcp: cache write failed: {e}");
     }
 }
 
-pub fn get_json(url: &str, fresh: Fresh) -> crate::problem::Result<(serde_json::Value, Source)> {
+/// Fetches and parses JSON into `T`; a mismatch names the field path (`[3].hero: invalid type`).
+pub fn get_json<T: serde::de::DeserializeOwned>(
+    url: &str,
+    fresh: Fresh,
+) -> crate::problem::Result<(T, Source)> {
     let (body, source) = get(url, fresh)?;
-    let value = serde_json::from_slice(&body).map_err(|e| {
-        Problem::new(Kind::InvalidResponse, format!("not JSON: {e}")).with_instance(url)
-    })?;
+    let value = serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_slice(&body))
+        .map_err(|e| {
+            let path = e.path().to_string();
+            Problem::new(Kind::InvalidResponse, format!("{path}: {}", e.into_inner()))
+                .with_instance(url)
+        })?;
     Ok((value, source))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atomic_write_replaces_and_leaves_no_temp() {
+        let dir = std::env::temp_dir().join(format!("dmcp-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.body");
+        write_atomic(&path, b"old").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn paces_requests_per_host() {
+        let start = Instant::now();
+        for _ in 0..3 {
+            pace("https://pace.test/a");
+        }
+        pace("https://other.test/b");
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= MIN_GAP * 2 && elapsed < MIN_GAP * 3,
+            "{elapsed:?}"
+        );
+    }
 
     #[test]
     fn stable_keys_and_encoding() {

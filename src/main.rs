@@ -1,5 +1,6 @@
 //! deadlock-mcp: an MCP server over stdio for Deadlock statistics and game knowledge.
 
+mod contracts;
 mod domain;
 mod http;
 mod problem;

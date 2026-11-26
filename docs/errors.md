@@ -40,7 +40,14 @@ The data source couldn't be reached (network error or timeout). Retried once aft
 
 ## invalid-response
 
-The data source answered with something that couldn't be read.
+The data source answered with something that couldn't be read: not JSON, a shape that doesn't
+match its published contract (`detail` names the field path, e.g. `[3].hero: invalid type`), or an
+answer over 64 MiB.
+
+## internal-error
+
+A bug in this server, not a problem with the data source. Please report it with the tool call that
+caused it.
 
 When a request fails and an older copy is cached, the tool answers with that copy instead and marks it `stale` in
 the answer's `sources`.

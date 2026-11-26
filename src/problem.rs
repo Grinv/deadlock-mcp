@@ -20,6 +20,8 @@ pub enum Kind {
     Unreachable,
     /// The data source answered with something we couldn't read.
     InvalidResponse,
+    /// A bug in this server, not in the data source.
+    Internal,
 }
 
 impl Kind {
@@ -31,6 +33,7 @@ impl Kind {
             Self::Upstream => "upstream-error",
             Self::Unreachable => "unreachable",
             Self::InvalidResponse => "invalid-response",
+            Self::Internal => "internal-error",
         }
     }
 
@@ -42,11 +45,12 @@ impl Kind {
             Self::Upstream => "The data source returned an error",
             Self::Unreachable => "The data source could not be reached",
             Self::InvalidResponse => "The data source sent an unreadable answer",
+            Self::Internal => "The server hit a bug",
         }
     }
 }
 
-const TYPE_BASE: &str = "https://github.com/Grinv/deadlock-mcp/blob/main/docs/errors.md#";
+const TYPE_BASE: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/errors.md#");
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Problem {
@@ -124,6 +128,40 @@ pub type Result<T> = std::result::Result<T, Problem>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ALL: [Kind; 7] = [
+        Kind::InvalidArgument,
+        Kind::NotFound,
+        Kind::RateLimited,
+        Kind::Upstream,
+        Kind::Unreachable,
+        Kind::InvalidResponse,
+        Kind::Internal,
+    ];
+
+    /// Every problem `type` URI must land on a section of `docs/errors.md`, and every section
+    /// must describe a kind the server can return.
+    #[test]
+    fn docs_list_every_kind() {
+        let documented: std::collections::BTreeSet<&str> = include_str!("../docs/errors.md")
+            .lines()
+            .filter_map(|l| l.strip_prefix("## "))
+            .collect();
+        let kinds: std::collections::BTreeSet<&str> = ALL.iter().map(|k| k.slug()).collect();
+        assert_eq!(documented, kinds);
+        // A new variant fails this match until it is added to ALL above.
+        for kind in ALL {
+            match kind {
+                Kind::InvalidArgument
+                | Kind::NotFound
+                | Kind::RateLimited
+                | Kind::Upstream
+                | Kind::Unreachable
+                | Kind::InvalidResponse
+                | Kind::Internal => {}
+            }
+        }
+    }
 
     #[test]
     fn serializes_as_rfc_9457() {

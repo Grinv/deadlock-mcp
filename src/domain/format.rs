@@ -5,6 +5,24 @@ pub fn mmss(secs: u64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+/// Text from people (Steam names, wiki pages) without control, zero-width and bidirectional
+/// formatting characters, which can hide or reorder what the model reads. Newlines and tabs stay.
+pub fn plain(s: &str) -> String {
+    s.chars()
+        .filter(|&c| {
+            let control = c.is_control() && !matches!(c, '\n' | '\t');
+            let hidden = matches!(
+                c,
+                '\u{200B}'..='\u{200F}'
+                    | '\u{202A}'..='\u{202E}'
+                    | '\u{2060}'..='\u{2069}'
+                    | '\u{FEFF}'
+            );
+            !(control || hidden)
+        })
+        .collect()
+}
+
 /// `YYYY-MM-DD` (UTC) for a unix timestamp.
 pub fn date(unix: i64) -> String {
     // Howard Hinnant's days-from-civil, inverted.
@@ -23,6 +41,11 @@ pub fn date(unix: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_drops_hidden_characters() {
+        assert_eq!(plain("a\u{202E}b\u{200B}c\u{7}\nd"), "abc\nd");
+    }
 
     #[test]
     fn formats() {

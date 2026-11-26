@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::Value;
 
+use crate::contracts::api::{PlayerMatchHistoryEntry, SteamProfile};
 use crate::domain::assets::catalog;
-use crate::domain::format::{date, mmss};
+use crate::domain::format::{date, mmss, plain};
 use crate::domain::outcome::{PlayerResult, player_result};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
@@ -25,6 +25,7 @@ pub struct Found {
 #[derive(Serialize, JsonSchema)]
 pub struct Search {
     pub players: Vec<Found>,
+    pub sources: Vec<Source>,
 }
 
 /// An account id, a `SteamID64` or a steamcommunity.com/profiles/ link resolves directly; anything
@@ -51,14 +52,15 @@ pub fn search(query: &str) -> Result<Search> {
                 "{query:?} is neither an account id nor a SteamID64"
             )));
         };
-        let (profile, _) = api::steam_profiles(&[account_id])?;
-        let p = profile.as_array().and_then(|a| a.first());
+        let (profiles, source) = api::steam_profiles(&[account_id])?;
+        let p = profiles.into_iter().next();
         return Ok(Search {
             players: vec![Found {
                 account_id,
-                steam_name: p.and_then(|p| p["personaname"].as_str()).map(str::to_owned),
-                profile_url: p.and_then(|p| p["profileurl"].as_str()).map(str::to_owned),
+                steam_name: p.as_ref().map(|p| plain(&p.personaname)),
+                profile_url: p.map(|p| p.profileurl),
             }],
+            sources: vec![source],
         });
     }
     if q.contains("steamcommunity.com/id/") {
@@ -66,17 +68,15 @@ pub fn search(query: &str) -> Result<Search> {
             "custom profile URLs (/id/...) can't be resolved without a Steam key; search by Steam name or give the SteamID64",
         ));
     }
-    let (found, _) = api::steam_search(q)?;
+    let (found, source) = api::steam_search(q)?;
     let players: Vec<Found> = found
-        .as_array()
         .into_iter()
-        .flatten()
         .take(10)
-        .filter_map(|p| {
+        .filter_map(|p: SteamProfile| {
             Some(Found {
-                account_id: u32::try_from(p["account_id"].as_u64()?).ok()?,
-                steam_name: p["personaname"].as_str().map(str::to_owned),
-                profile_url: p["profileurl"].as_str().map(str::to_owned),
+                account_id: u32::try_from(p.account_id).ok()?,
+                steam_name: Some(plain(&p.personaname)),
+                profile_url: Some(p.profileurl),
             })
         })
         .collect();
@@ -85,19 +85,22 @@ pub fn search(query: &str) -> Result<Search> {
             "no Steam account named like {query:?} in the Deadlock API; try another spelling or the SteamID64"
         )));
     }
-    Ok(Search { players })
+    Ok(Search {
+        players,
+        sources: vec![source],
+    })
 }
 
 #[derive(Serialize, JsonSchema)]
 pub struct RecentMatch {
-    pub match_id: u64,
+    pub match_id: i64,
     pub date: String,
     pub hero: String,
     pub result: PlayerResult,
-    pub kills: u64,
-    pub deaths: u64,
-    pub assists: u64,
-    pub net_worth: u64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub net_worth: i64,
     pub duration: String,
 }
 
@@ -130,48 +133,50 @@ pub struct Overview {
 pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
     let cat = catalog()?;
     let (history, history_source) = api::match_history(account_id)?;
-    let Some(history) = history.as_array().filter(|h| !h.is_empty()) else {
+    if history.is_empty() {
         return Err(Problem::not_found(format!(
             "the Deadlock API has no matches for account {account_id}; check the id with player_search"
         )));
-    };
+    }
     let (rank, rank_source) = api::rank(account_id)?;
-    let badge = rank["badge"].as_u64().unwrap_or(0);
-    let profile = api::steam_profiles(&[account_id]).ok();
-    let steam_name = profile.as_ref().and_then(|(p, _)| {
-        p.as_array()?.first()?["personaname"]
-            .as_str()
-            .map(str::to_owned)
-    });
+    // The name is a nicety: the overview stands without it, so log and go on.
+    let (steam_name, profile_source) = match api::steam_profiles(&[account_id]) {
+        Ok((profiles, source)) => (
+            profiles.into_iter().next().map(|p| plain(&p.personaname)),
+            Some(source),
+        ),
+        Err(problem) => {
+            eprintln!("deadlock-mcp: steam name: {}", problem.message());
+            (None, None)
+        }
+    };
 
-    let result_of = |m: &Value| {
+    let result_of = |m: &PlayerMatchHistoryEntry| {
         player_result(
-            m["player_match_outcome"].as_u64().unwrap_or(0),
-            m["player_team"].as_u64().unwrap_or(0),
-            m["match_result"].as_u64().unwrap_or(u64::MAX),
+            m.player_match_outcome,
+            i64::from(m.player_team) == m.match_result,
         )
     };
+    let hero_of =
+        |m: &PlayerMatchHistoryEntry| cat.hero(u32::try_from(m.hero_id).unwrap_or_default());
     let (mut wins, mut losses, mut not_scored) = (0, 0, 0);
-    let mut heroes: HashMap<u64, (u32, u32, u32)> = HashMap::new();
-    for m in history {
-        let r = result_of(m);
-        let entry = heroes
-            .entry(m["hero_id"].as_u64().unwrap_or(0))
-            .or_default();
+    let mut heroes: HashMap<i32, (u32, u32, u32)> = HashMap::new();
+    for m in &history {
+        let entry = heroes.entry(m.hero_id).or_default();
         entry.0 += 1;
-        match r {
+        match result_of(m) {
             PlayerResult::Win => (wins, entry.1) = (wins + 1, entry.1 + 1),
             PlayerResult::Loss => (losses, entry.2) = (losses + 1, entry.2 + 1),
             PlayerResult::NotScored => not_scored += 1,
         }
     }
-    let mut top: Vec<(u64, (u32, u32, u32))> = heroes.into_iter().collect();
+    let mut top: Vec<(i32, (u32, u32, u32))> = heroes.into_iter().collect();
     top.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(&b.0)));
     let scored = wins + losses;
     Ok(Overview {
         account_id,
         steam_name,
-        rank: cat.rank(badge),
+        rank: cat.rank(rank.badge),
         matches: u32::try_from(history.len()).unwrap_or(u32::MAX),
         wins,
         losses,
@@ -181,7 +186,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
             .into_iter()
             .take(5)
             .map(|(h, (m, w, l))| HeroRecord {
-                hero: cat.hero(h),
+                hero: cat.hero(u32::try_from(h).unwrap_or_default()),
                 matches: m,
                 wins: w,
                 losses: l,
@@ -191,17 +196,21 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
             .iter()
             .take(recent)
             .map(|m| RecentMatch {
-                match_id: m["match_id"].as_u64().unwrap_or(0),
-                date: date(m["start_time"].as_i64().unwrap_or(0)),
-                hero: cat.hero(m["hero_id"].as_u64().unwrap_or(0)),
+                match_id: m.match_id,
+                date: date(m.start_time),
+                hero: hero_of(m),
                 result: result_of(m),
-                kills: m["player_kills"].as_u64().unwrap_or(0),
-                deaths: m["player_deaths"].as_u64().unwrap_or(0),
-                assists: m["player_assists"].as_u64().unwrap_or(0),
-                net_worth: m["net_worth"].as_u64().unwrap_or(0),
-                duration: mmss(m["match_duration_s"].as_u64().unwrap_or(0)),
+                kills: m.player_kills,
+                deaths: m.player_deaths,
+                assists: m.player_assists,
+                net_worth: m.net_worth,
+                duration: mmss(u64::try_from(m.match_duration_s).unwrap_or_default()),
             })
             .collect(),
-        sources: vec![history_source, rank_source],
+        sources: [history_source, rank_source]
+            .into_iter()
+            .chain(profile_source)
+            .chain(cat.stale_sources())
+            .collect(),
     })
 }

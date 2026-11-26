@@ -4,8 +4,9 @@
 use std::time::Duration;
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::domain::format::plain;
 use crate::http::{Fresh, Source, encode, get_json};
 use crate::problem::{Kind, Problem, Result};
 
@@ -62,24 +63,53 @@ fn strip_tags(s: &str) -> String {
         .replace("&amp;", "&")
 }
 
+/// The parts of `MediaWiki` `action=query` answers this module reads.
+#[derive(Deserialize)]
+struct Query<T> {
+    query: T,
+}
+
+#[derive(Deserialize)]
+struct SearchList {
+    search: Vec<RawHit>,
+}
+
+#[derive(Deserialize)]
+struct RawHit {
+    title: String,
+    #[serde(default)]
+    snippet: String,
+}
+
+#[derive(Deserialize)]
+struct Pages {
+    pages: std::collections::HashMap<String, RawPage>,
+}
+
+#[derive(Deserialize)]
+struct RawPage {
+    title: String,
+    #[serde(default)]
+    extract: String,
+    /// Present (as an empty string) when the page doesn't exist.
+    missing: Option<serde_json::Value>,
+}
+
 pub fn search(query: &str, limit: u32) -> Result<Search> {
     let url = format!(
         "{API}?action=query&list=search&format=json&srlimit={}&srsearch={}",
         limit.clamp(1, 20),
         encode(query)
     );
-    let (data, source) = get_json(&url, FRESH)?;
-    let results = data["query"]["search"]
-        .as_array()
+    let (data, source): (Query<SearchList>, Source) = get_json(&url, FRESH)?;
+    let results = data
+        .query
+        .search
         .into_iter()
-        .flatten()
-        .filter_map(|r| {
-            let title = r["title"].as_str()?;
-            Some(SearchHit {
-                title: title.to_owned(),
-                snippet: strip_tags(r["snippet"].as_str().unwrap_or_default()),
-                url: page_url(title),
-            })
+        .map(|r| SearchHit {
+            url: page_url(&r.title),
+            snippet: plain(&strip_tags(&r.snippet)),
+            title: plain(&r.title),
         })
         .collect();
     Ok(Search {
@@ -94,22 +124,20 @@ pub fn page(title: &str, section: Option<&str>) -> Result<Page> {
         "{API}?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles={}",
         encode(title)
     );
-    let (data, source) = get_json(&url, FRESH)?;
-    let Some(page) = data["query"]["pages"]
-        .as_object()
-        .and_then(|p| p.values().next())
-    else {
+    let (data, source): (Query<Pages>, Source) = get_json(&url, FRESH)?;
+    let Some(page) = data.query.pages.into_values().next() else {
         return Err(
             Problem::new(Kind::InvalidResponse, "the wiki returned no page").with_instance(url),
         );
     };
-    if page.get("missing").is_some() {
+    if page.missing.is_some() {
         return Err(Problem::not_found(format!(
             "the wiki has no page titled {title:?}; find the exact title with wiki_search"
         )));
     }
-    let real_title = page["title"].as_str().unwrap_or(title).to_owned();
-    let full = page["extract"].as_str().unwrap_or_default();
+    let real_title = plain(&page.title);
+    let full = plain(&page.extract);
+    let full = full.as_str();
     let sections: Vec<String> = full
         .lines()
         .filter_map(heading)

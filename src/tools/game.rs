@@ -3,23 +3,43 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::domain::assets::{Item, catalog};
+use crate::domain::assets::{Item, ItemKind, catalog};
+use crate::http::Source;
 use crate::problem::{Problem, Result};
 
 const LIMIT: usize = 15;
 
 #[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Hero,
+    Ability,
+    Weapon,
+    /// A shop item.
+    Upgrade,
+}
+
+impl From<ItemKind> for Kind {
+    fn from(kind: ItemKind) -> Self {
+        match kind {
+            ItemKind::Ability => Self::Ability,
+            ItemKind::Weapon => Self::Weapon,
+            ItemKind::Upgrade => Self::Upgrade,
+        }
+    }
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct Entry {
     pub id: u32,
     pub name: String,
-    /// `hero`, `ability`, `upgrade` (shop item) or `weapon`.
-    pub kind: String,
+    pub kind: Kind,
     /// The hero an ability or weapon belongs to.
     pub hero: Option<String>,
     /// Shop category of an upgrade: `weapon`, `spirit` or `vitality`.
     pub slot: Option<String>,
-    pub tier: Option<u64>,
-    pub cost: Option<u64>,
+    pub tier: Option<i32>,
+    pub cost: Option<i64>,
     /// A hero's abilities.
     pub abilities: Vec<String>,
 }
@@ -29,6 +49,7 @@ pub struct Lookup {
     pub results: Vec<Entry>,
     /// More matched than shown; use a longer name to narrow the search.
     pub truncated: bool,
+    pub sources: Vec<Source>,
 }
 
 pub fn lookup(query: &str) -> Result<Lookup> {
@@ -42,8 +63,8 @@ pub fn lookup(query: &str) -> Result<Lookup> {
     let item_entry = |i: &Item| Entry {
         id: i.id,
         name: i.name.clone(),
-        kind: i.kind.clone(),
-        hero: i.hero.map(|h| cat.hero(u64::from(h))),
+        kind: i.kind.into(),
+        hero: i.hero.map(|h| cat.hero(h)),
         slot: i.slot.clone(),
         tier: i.tier,
         cost: i.cost,
@@ -53,13 +74,13 @@ pub fn lookup(query: &str) -> Result<Lookup> {
         let mut abilities: Vec<&Item> = cat
             .items
             .values()
-            .filter(|i| i.hero == Some(id) && i.kind == "ability")
+            .filter(|i| i.hero == Some(id) && i.kind == ItemKind::Ability)
             .collect();
         abilities.sort_by_key(|i| i.name.as_str());
         Entry {
             id,
             name: name.to_owned(),
-            kind: "hero".to_owned(),
+            kind: Kind::Hero,
             hero: None,
             slot: None,
             tier: None,
@@ -104,5 +125,9 @@ pub fn lookup(query: &str) -> Result<Lookup> {
     }
     let truncated = results.len() > LIMIT;
     results.truncate(LIMIT);
-    Ok(Lookup { results, truncated })
+    Ok(Lookup {
+        results,
+        truncated,
+        sources: cat.sources.clone(),
+    })
 }

@@ -5,12 +5,25 @@ edition = "2024"
 rust-version = "1.100"
 description = "MCP server for Deadlock: match and player statistics from the Deadlock API, game knowledge from the Deadlock Wiki"
 license = "MIT"
+repository = "https://github.com/Grinv/deadlock-mcp"
+
+[workspace]
+members = ["xtask"]
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+[lints]
+workspace = true
 
 [dependencies]
+garde = { version = "0.23.0", features = ["derive"] }
+prost = "0.14.6"
 rmcp = { version = "3.11.0", features = ["server", "transport-io", "macros"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_path_to_error = "0.1.20"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
 ureq = "3.5.2"
 
