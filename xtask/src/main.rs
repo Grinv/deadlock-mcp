@@ -1,3 +1,6 @@
+//! Development tasks. `cargo xtask manifest` and `cargo xtask server-json` write the distribution
+//! metadata (see `manifest.rs`).
+//!
 //! `cargo xtask contracts`: regenerates `src/contracts/{api,valve}.rs` from the pinned upstream
 //! contracts in `contracts/` (see `contracts/SOURCES.md`). The output is committed, so building the
 //! server needs neither the generators nor the network.
@@ -9,6 +12,8 @@ use std::mem::DropGuard;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+
+mod manifest;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -45,15 +50,19 @@ const PROTO_ROOT: &str = "citadel_gcmessages_common.proto";
 const PROTO_DIRS: &[&str] = &["deadlock", "common", "gcsdk"];
 
 fn main() -> Result<()> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("xtask lives in the workspace root")?;
     match std::env::args().nth(1).as_deref() {
         Some("contracts") => {
-            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .ok_or("xtask lives in the workspace root")?;
             api(root)?;
             valve(root)
         }
-        _ => Err("usage: cargo xtask contracts".into()),
+        Some("manifest") => manifest::manifest(root),
+        Some("server-json") => {
+            manifest::server_json(root, &std::env::args().nth(2).unwrap_or_default())
+        }
+        _ => Err("usage: cargo xtask contracts|manifest|server-json <sha256>".into()),
     }
 }
 

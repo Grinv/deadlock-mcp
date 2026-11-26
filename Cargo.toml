@@ -3,8 +3,11 @@ name = "deadlock-mcp"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.100"
-description = "MCP server for Deadlock: match and player statistics from the Deadlock API, game knowledge from the Deadlock Wiki"
+description = "Deadlock match and player stats from the Deadlock API, game knowledge from the Deadlock Wiki"
 license = "MIT"
+authors = ["Konstantin Ostrovskii"]
+keywords = ["deadlock", "mcp", "mcp-server", "game-stats", "valve"]
+categories = ["games", "command-line-utilities"]
 repository = "https://github.com/Grinv/deadlock-mcp"
 
 [workspace]

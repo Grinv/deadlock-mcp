@@ -26,6 +26,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked
       - name: Generated contracts match contracts/
         run: cargo xtask contracts && git diff --exit-code src/contracts
+      - name: manifest.json matches the server and is valid
+        run: |
+          cargo xtask manifest && git diff --exit-code manifest.json
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
 
   test:
     strategy:

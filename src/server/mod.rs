@@ -261,6 +261,19 @@ impl ServerHandler for DeadlockServer {
 mod tests {
     use super::*;
 
+    /// The README's tool table lists every tool.
+    #[test]
+    fn readme_lists_every_tool() {
+        let readme = include_str!("../../README.md");
+        for tool in DeadlockServer::tools().list_all() {
+            assert!(
+                readme.contains(&format!("`{}`", tool.name)),
+                "{} is missing from README.md",
+                tool.name
+            );
+        }
+    }
+
     /// Tool names the instructions and the prompt tell the model to call must exist, and every
     /// tool must be introduced in the instructions (`match_*` covers the match tools).
     #[test]

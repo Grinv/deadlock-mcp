@@ -9,7 +9,7 @@ A tool that fails returns `isError: true`. Its text is meant for the model; its 
   "title": "Rate limited",
   "status": 429,
   "detail": "api.deadlock-api.com asked to slow down; try again in 30 s",
-  "instance": "https://api.deadlock-api.com/v1/players/80337336/match-history",
+  "instance": "https://api.deadlock-api.com/v1/players/12345678/match-history",
   "retry_after_s": 30
 }
 ```

@@ -1,0 +1,148 @@
+{
+  "author": {
+    "name": "Konstantin Ostrovskii"
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
+  },
+  "description": "Deadlock match and player stats from the Deadlock API, game knowledge from the Deadlock Wiki",
+  "display_name": "Deadlock",
+  "documentation": "https://github.com/Grinv/deadlock-mcp#readme",
+  "homepage": "https://github.com/Grinv/deadlock-mcp",
+  "keywords": [
+    "deadlock",
+    "mcp",
+    "mcp-server",
+    "game-stats",
+    "valve"
+  ],
+  "license": "MIT",
+  "manifest_version": "0.3",
+  "name": "deadlock-mcp",
+  "privacy_policies": [
+    "https://github.com/Grinv/deadlock-mcp/blob/main/PRIVACY.md",
+    "https://deadlock-api.com/data-privacy"
+  ],
+  "prompts": [
+    {
+      "arguments": [
+        "player"
+      ],
+      "description": "Review a player's match: result, lane, where the souls came from, deaths and purchases.",
+      "name": "review_match",
+      "text": "Review their latest match (the first one player_overview lists) for the Deadlock player \"${arguments.player}\".\n1. Resolve the player with player_search if needed, then get the match id from player_overview.\n2. Call match_player and match_lanes; call match_summary for the whole lobby.\n3. Explain the result (and why it wasn't scored, if so), how the lane went, where the souls came from, how many souls sat unspent compared with the lobby, where and to whom they died, and what they bought when.\n4. Compare with the meta at the player's rank (min_badge/max_badge around their badge): hero_items for their hero, and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters for their lane opponent. Mention the match counts behind the rates.\n5. If they died often, player_deaths_map with their hero shows whether those places are a habit.\n6. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them."
+    }
+  ],
+  "prompts_generated": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Grinv/deadlock-mcp"
+  },
+  "server": {
+    "entry_point": "server/deadlock-mcp",
+    "mcp_config": {
+      "args": [],
+      "command": "${__dirname}/server/deadlock-mcp",
+      "env": {},
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/deadlock-mcp.exe"
+        }
+      }
+    },
+    "type": "binary"
+  },
+  "support": "https://github.com/Grinv/deadlock-mcp/issues",
+  "tools": [
+    {
+      "description": "A hero's most common and best-winning ability upgrade orders.",
+      "name": "ability_order"
+    },
+    {
+      "description": "Popular in-game builds of a hero: name, author, the build id to import in game, favorites.",
+      "name": "builds"
+    },
+    {
+      "description": "Heroes (with their abilities), abilities and shop items by name or id.",
+      "name": "game_lookup"
+    },
+    {
+      "description": "The enemy heroes a hero wins most and least against.",
+      "name": "hero_counters"
+    },
+    {
+      "description": "Which shop items win on a hero, optionally against given enemy heroes.",
+      "name": "hero_items"
+    },
+    {
+      "description": "Win rate, pick rate and matches per hero over all players' matches.",
+      "name": "hero_stats"
+    },
+    {
+      "description": "The teammates a hero wins most and least with.",
+      "name": "hero_synergies"
+    },
+    {
+      "description": "Whether the player runs the API's ingest tool, which sends their matches as they play.",
+      "name": "ingest_status"
+    },
+    {
+      "description": "The top players of a region's ranked leaderboard, optionally for one hero.",
+      "name": "leaderboard"
+    },
+    {
+      "description": "The three lanes of a match: who laned against whom and the soul lead every 3 minutes up to 15:00.",
+      "name": "match_lanes"
+    },
+    {
+      "description": "One player's match in depth: result and why, souls by source, unspent souls, deaths with killers and\npositions, purchases and permanent buffs.",
+      "name": "match_player"
+    },
+    {
+      "description": "A match's mode, length and winner, and every player's hero, lane, K/D/A, souls, damage and own result.",
+      "name": "match_summary"
+    },
+    {
+      "description": "Patch notes and news: the list, or one patch's notes as text.",
+      "name": "patches"
+    },
+    {
+      "description": "Where on the map a player dies and kills most: hotspots in `match_player`'s map coordinates.",
+      "name": "player_deaths_map"
+    },
+    {
+      "description": "The opponents a player met most and lost to most, with Steam names.",
+      "name": "player_enemies"
+    },
+    {
+      "description": "A player's stats per hero: matches, win rate, K/D/A per match, souls and damage per minute.",
+      "name": "player_heroes"
+    },
+    {
+      "description": "Who a player plays with: matches together and the win rate, with Steam names.",
+      "name": "player_mates"
+    },
+    {
+      "description": "A player's rank, win rate over counted matches, most played heroes and recent matches.",
+      "name": "player_overview"
+    },
+    {
+      "description": "Find a player's account id by Steam name, `SteamID64` or profile link.",
+      "name": "player_search"
+    },
+    {
+      "description": "The text of a Deadlock Wiki page, or of one of its sections.",
+      "name": "wiki_page"
+    },
+    {
+      "description": "Search the Deadlock Wiki for game mechanics, heroes and items.",
+      "name": "wiki_search"
+    }
+  ],
+  "tools_generated": false,
+  "version": "0.1.0"
+}
