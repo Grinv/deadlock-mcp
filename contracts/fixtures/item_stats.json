@@ -1,0 +1,28 @@
+[
+ {
+  "item_id": 7409189,
+  "bucket": 0,
+  "wins": 509049,
+  "losses": 398775,
+  "matches": 907824,
+  "players": 224933,
+  "avg_buy_time_s": 834.7220595622059,
+  "avg_sell_time_s": 1710.2099502258627,
+  "avg_buy_time_relative": 38.30845283614517,
+  "avg_sell_time_relative": 73.1157803557742,
+  "sold": 651945
+ },
+ {
+  "item_id": 26002154,
+  "bucket": 0,
+  "wins": 1741,
+  "losses": 1840,
+  "matches": 3581,
+  "players": 1820,
+  "avg_buy_time_s": 741.4724937168389,
+  "avg_sell_time_s": 1692.9078641228477,
+  "avg_buy_time_relative": 34.24839923066912,
+  "avg_sell_time_relative": 71.21450691282138,
+  "sold": 2149
+ }
+]

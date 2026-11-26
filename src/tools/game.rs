@@ -1,9 +1,13 @@
-//! `game_lookup`: heroes, abilities and items by name or id.
+//! `game_lookup` (heroes, abilities and items by name or id), the hero card resource and
+//! `patches`.
 
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::domain::assets::{Item, ItemKind, catalog};
+use crate::contracts::api::FeedItem;
+use crate::domain::assets::catalog;
+use crate::domain::format::{bounded, plain, strip_tags};
+use crate::domain::items::{Item, ItemKind};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 
@@ -42,6 +46,12 @@ pub struct Entry {
     pub cost: Option<i64>,
     /// A hero's abilities.
     pub abilities: Vec<String>,
+    /// The game's tooltip text (cut at 600 characters); a hero's role.
+    pub description: Option<String>,
+    /// What each of an ability's three upgrades (1, 2, 3 ability points) adds.
+    pub upgrades: Vec<String>,
+    /// The tooltip's labelled values at base level, e.g. "Cooldown: 28s" (at most 12).
+    pub properties: Vec<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -69,6 +79,9 @@ pub fn lookup(query: &str) -> Result<Lookup> {
         tier: i.tier,
         cost: i.cost,
         abilities: Vec::new(),
+        description: i.description.clone(),
+        upgrades: i.upgrades.clone(),
+        properties: i.properties.clone(),
     };
     let hero_entry = |id: u32, name: &str| {
         let mut abilities: Vec<&Item> = cat
@@ -89,6 +102,9 @@ pub fn lookup(query: &str) -> Result<Lookup> {
                 .into_iter()
                 .map(|i| format!("{} ({})", i.name, i.id))
                 .collect(),
+            description: cat.hero_info.get(&id).and_then(|h| h.role.clone()),
+            upgrades: Vec::new(),
+            properties: Vec::new(),
         }
     };
 
@@ -129,5 +145,155 @@ pub fn lookup(query: &str) -> Result<Lookup> {
         results,
         truncated,
         sources: cat.sources.clone(),
+    })
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct AbilityCard {
+    pub id: u32,
+    pub name: String,
+    pub description: Option<String>,
+    /// What each of the three upgrades adds.
+    pub upgrades: Vec<String>,
+    pub properties: Vec<String>,
+}
+
+/// The `deadlock://hero/{id}` resource.
+#[derive(Serialize, JsonSchema)]
+pub struct HeroCard {
+    pub id: u32,
+    pub name: String,
+    pub role: Option<String>,
+    pub playstyle: Option<String>,
+    /// The game's short lore text; the wiki's lore page has the full story.
+    pub lore: Option<String>,
+    pub lore_page: String,
+    pub abilities: Vec<AbilityCard>,
+    pub sources: Vec<Source>,
+}
+
+/// `None` when the catalog has no hero `id`.
+pub fn hero_card(id: u32) -> Result<Option<HeroCard>> {
+    let cat = catalog()?;
+    let Some(name) = cat.heroes.get(&id) else {
+        return Ok(None);
+    };
+    let info = cat.hero_info.get(&id);
+    // Abilities without tooltip text are helpers (melee, internal parts of a signature ability).
+    let mut abilities: Vec<&Item> = cat
+        .items
+        .values()
+        .filter(|i| i.hero == Some(id) && i.kind == ItemKind::Ability && i.description.is_some())
+        .collect();
+    abilities.sort_by_key(|i| i.name.as_str());
+    Ok(Some(HeroCard {
+        id,
+        name: name.clone(),
+        role: info.and_then(|h| h.role.clone()),
+        playstyle: info.and_then(|h| h.playstyle.clone()),
+        lore: info.and_then(|h| h.lore.clone()),
+        lore_page: format!("{}/Lore", crate::sources::wiki::page_url(name)),
+        abilities: abilities
+            .into_iter()
+            .map(|i| AbilityCard {
+                id: i.id,
+                name: i.name.clone(),
+                description: i.description.clone(),
+                upgrades: i.upgrades.clone(),
+                properties: i.properties.clone(),
+            })
+            .collect(),
+        sources: cat.sources.clone(),
+    }))
+}
+
+/// Patch notes longer than this are cut.
+const MAX_NOTES: usize = 12_000;
+
+#[derive(Serialize, JsonSchema)]
+pub struct Patch {
+    pub title: String,
+    pub date: String,
+    /// `forum` (the official changelog) or `steam` (Steam news, also events and announcements).
+    pub source: &'static str,
+    pub link: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PatchNotes {
+    pub title: String,
+    pub date: String,
+    pub link: String,
+    pub text: String,
+    /// The notes were cut at 12,000 characters; the link has the rest.
+    pub truncated: bool,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PatchFeed {
+    /// Newest first; empty when `link` asked for one patch's notes.
+    pub patches: Vec<Patch>,
+    pub notes: Option<PatchNotes>,
+    pub sources: Vec<Source>,
+}
+
+/// `(source, title, date, link, content)` of a feed entry.
+fn fields(f: &FeedItem) -> (&'static str, &String, &String, &String, &String) {
+    match f {
+        FeedItem::ForumPatch {
+            title,
+            pub_date,
+            link,
+            content,
+            ..
+        } => ("forum", title, pub_date, link, content),
+        FeedItem::SteamNews {
+            title,
+            pub_date,
+            link,
+            content,
+            ..
+        } => ("steam", title, pub_date, link, content),
+    }
+}
+
+pub fn patches(link: Option<&str>, limit: usize) -> Result<PatchFeed> {
+    let (feed, source) = crate::sources::api::patches()?;
+    let day = |d: &str| d.get(..10).unwrap_or(d).to_owned();
+    if let Some(wanted) = link {
+        let Some((_, title, date, link, content)) =
+            feed.iter().map(fields).find(|f| f.3 == wanted.trim())
+        else {
+            return Err(Problem::not_found(format!(
+                "no patch with link {wanted:?} in the feed; call patches without a link to list them"
+            )));
+        };
+        let (text, truncated) = bounded(&plain(&strip_tags(content)), MAX_NOTES);
+        return Ok(PatchFeed {
+            patches: Vec::new(),
+            notes: Some(PatchNotes {
+                title: plain(title.trim()),
+                date: day(date),
+                link: link.clone(),
+                text,
+                truncated,
+            }),
+            sources: vec![source],
+        });
+    }
+    Ok(PatchFeed {
+        patches: feed
+            .iter()
+            .map(fields)
+            .take(limit)
+            .map(|(source, title, date, link, _)| Patch {
+                title: plain(title.trim()),
+                date: day(date),
+                source,
+                link: link.clone(),
+            })
+            .collect(),
+        notes: None,
+        sources: vec![source],
     })
 }

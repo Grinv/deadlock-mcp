@@ -35,6 +35,40 @@ mod tests {
             parse(include_str!("../../contracts/fixtures/match_history.json"));
         assert!(!history.is_empty());
         let _: api::RankResponse = parse(include_str!("../../contracts/fixtures/rank.json"));
+        let _: Vec<api::HeroStats> = parse(include_str!(
+            "../../contracts/fixtures/player_hero_stats.json"
+        ));
+        let _: Vec<api::MateStats> =
+            parse(include_str!("../../contracts/fixtures/mate_stats.json"));
+        let _: Vec<api::EnemyStats> =
+            parse(include_str!("../../contracts/fixtures/enemy_stats.json"));
+        let _: Vec<api::KillDeathStats> = parse(include_str!(
+            "../../contracts/fixtures/kill_death_stats.json"
+        ));
+        let _: api::IngestStatusResponse =
+            parse(include_str!("../../contracts/fixtures/ingest_status.json"));
+        let _: Vec<api::Build> = parse(include_str!("../../contracts/fixtures/builds.json"));
+        let _: Vec<api::AnalyticsHeroStats> = parse(include_str!(
+            "../../contracts/fixtures/analytics_hero_stats.json"
+        ));
+        let _: Vec<api::ItemStats> =
+            parse(include_str!("../../contracts/fixtures/item_stats.json"));
+        let _: Vec<api::HeroCounterStats> = parse(include_str!(
+            "../../contracts/fixtures/hero_counter_stats.json"
+        ));
+        let _: Vec<api::HeroSynergyStats> = parse(include_str!(
+            "../../contracts/fixtures/hero_synergy_stats.json"
+        ));
+        let _: Vec<api::AnalyticsAbilityOrderStats> = parse(include_str!(
+            "../../contracts/fixtures/ability_order_stats.json"
+        ));
+        let patches: Vec<api::FeedItem> =
+            parse(include_str!("../../contracts/fixtures/patches.json"));
+        assert!(matches!(patches[0], api::FeedItem::ForumPatch { .. }));
+        assert!(matches!(patches[1], api::FeedItem::SteamNews { .. }));
+        let board: api::Leaderboard =
+            parse(include_str!("../../contracts/fixtures/leaderboard.json"));
+        assert!(!board.entries.is_empty());
     }
 
     #[test]

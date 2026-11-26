@@ -383,6 +383,67 @@ pub struct AbilityVideos {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub webm: ::std::option::Option<::std::string::String>,
 }
+///`AnalyticsAbilityOrderStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct AnalyticsAbilityOrderStats {
+    ///See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub abilities: ::std::vec::Vec<i64>,
+    ///Average game time (in seconds) at which each upgrade in `abilities` was bought, index-aligned with `abilities`.
+    pub avg_upgrade_times_s: ::std::vec::Vec<f64>,
+    pub losses: i64,
+    pub matches: i64,
+    pub players: i64,
+    pub total_assists: i64,
+    pub total_deaths: i64,
+    pub total_kills: i64,
+    pub wins: i64,
+}
+///`AnalyticsHeroStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct AnalyticsHeroStats {
+    pub bucket: i64,
+    /**Sum of `matches` over all heroes in this bucket, counting only the UTC days from this
+    hero's first match in the response on. A pick rate that leaves out the part of the range
+    before the hero's release: `matches / bucket_matches_since_first_day` times the players
+    per match. The hero's first day counts whole, so it still includes the hours before its
+    first match.*/
+    pub bucket_matches_since_first_day: i64,
+    ///See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_id: i32,
+    pub losses: i64,
+    pub matches: i64,
+    pub matches_per_bucket: i64,
+    /**Matches that carry buff pickup counts. Equals `matches`, except on account-scoped
+    queries (`account_ids` without item or ability filters): those read a per-account table
+    that only has buff counts for matches ingested since build 6712 (late September 2026).*/
+    pub permanent_buff_matches: i64,
+    /**Matches with pickup timings. Only matches since build 6712 (2026-09-29) record pickup
+    times, and only players with at least one permanent pickup count here.*/
+    pub permanent_buff_timing_matches: i64,
+    pub total_assists: i64,
+    pub total_boss_damage: i64,
+    pub total_creep_damage: i64,
+    pub total_deaths: i64,
+    pub total_denies: i64,
+    /**Sum of the game time (seconds) of each player's first permanent buff pickup, over the
+    `permanent_buff_timing_matches` matches.
+    Average: `total_first_permanent_buff_time_s / permanent_buff_timing_matches`.*/
+    pub total_first_permanent_buff_time_s: i64,
+    pub total_kills: i64,
+    pub total_last_hits: i64,
+    pub total_max_health: i64,
+    pub total_net_worth: i64,
+    pub total_neutral_damage: i64,
+    /**Sum of permanent buff (power-up) pickups over the `permanent_buff_matches` matches.
+    Average per match: `total_permanent_buffs / permanent_buff_matches`. Buff types:
+    <https://api.deadlock-api.com/v1/assets/misc-entities>*/
+    pub total_permanent_buffs: i64,
+    pub total_player_damage: i64,
+    pub total_player_damage_taken: i64,
+    pub total_shots_hit: i64,
+    pub total_shots_missed: i64,
+    pub wins: i64,
+}
 ///`BreakablePowerupLootParams`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct BreakablePowerupLootParams {
@@ -394,6 +455,95 @@ pub struct BreakablePowerupLootParams {
         ::std::string::String,
         ::std::collections::HashMap<::std::string::String, f64>,
     >,
+}
+///`Build`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct Build {
+    pub hero_build: BuildHero,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub num_favorites: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub num_ignores: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub num_reports: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub num_weekly_favorites: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub rollup_category: ::std::option::Option<i64>,
+}
+///`BuildHero`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct BuildHero {
+    pub author_account_id: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub description: ::std::option::Option<::std::string::String>,
+    pub details: BuildHeroDetails,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub development_build: ::std::option::Option<bool>,
+    pub hero_build_id: i64,
+    ///See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_id: i64,
+    pub language: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub last_updated_timestamp: ::std::option::Option<i64>,
+    pub name: ::std::string::String,
+    pub origin_build_id: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub publish_timestamp: ::std::option::Option<i64>,
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub tags: ::std::vec::Vec<i64>,
+    pub version: i64,
+}
+///`BuildHeroDetails`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct BuildHeroDetails {
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub ability_order: ::std::option::Option<BuildHeroDetailsAbilityOrder>,
+    pub mod_categories: ::std::vec::Vec<BuildHeroDetailsCategory>,
+}
+///`BuildHeroDetailsAbilityOrder`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
+pub struct BuildHeroDetailsAbilityOrder {
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub currency_changes:
+        ::std::option::Option<::std::vec::Vec<BuildHeroDetailsAbilityOrderCurrencyChange>>,
+}
+///`BuildHeroDetailsAbilityOrderCurrencyChange`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct BuildHeroDetailsAbilityOrderCurrencyChange {
+    pub ability_id: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub annotation: ::std::option::Option<::std::string::String>,
+    pub currency_type: i32,
+    pub delta: i32,
+}
+///`BuildHeroDetailsCategory`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct BuildHeroDetailsCategory {
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub description: ::std::option::Option<::std::string::String>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub height: ::std::option::Option<f32>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub mods: ::std::option::Option<::std::vec::Vec<BuildHeroDetailsCategoryAbility>>,
+    pub name: ::std::string::String,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub optional: ::std::option::Option<bool>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub width: ::std::option::Option<f32>,
+}
+///`BuildHeroDetailsCategoryAbility`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct BuildHeroDetailsCategoryAbility {
+    pub ability_id: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub annotation: ::std::option::Option<::std::string::String>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub imbue_target_ability_id: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub required_flex_slots: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub sell_priority: ::std::option::Option<i64>,
 }
 /**RGBA color emitted by KV3 as a 3- or 4-element integer array. Alpha
 defaults to 255 when omitted.*/
@@ -503,6 +653,37 @@ pub struct DraftBuckets {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub name: ::std::option::Option<::std::string::String>,
 }
+///`EnemyStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct EnemyStats {
+    pub enemy_id: i64,
+    pub matches: ::std::vec::Vec<i64>,
+    pub matches_played: i64,
+    ///The amount of matches won against the enemy.
+    pub wins: i64,
+}
+///`FeedItem`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum FeedItem {
+    ForumPatch {
+        category: PatchCategory,
+        content: ::std::string::String,
+        guid: PatchGuid,
+        link: ::std::string::String,
+        pub_date: ::std::string::String,
+        source: ForumPatchSource,
+        title: ::std::string::String,
+    },
+    SteamNews {
+        content: ::std::string::String,
+        guid: PatchGuid,
+        link: ::std::string::String,
+        pub_date: ::std::string::String,
+        source: SteamNewsSource,
+        title: ::std::string::String,
+    },
+}
 ///`FlashData`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct FlashData {
@@ -523,6 +704,63 @@ pub struct FlashData {
     ///Only present up to build 6701.
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub hardness: ::std::option::Option<f64>,
+}
+///`ForumPatch`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ForumPatch {
+    pub category: PatchCategory,
+    pub content: ::std::string::String,
+    pub guid: PatchGuid,
+    pub link: ::std::string::String,
+    pub pub_date: ::std::string::String,
+    pub title: ::std::string::String,
+}
+///`ForumPatchSource`
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum ForumPatchSource {
+    #[serde(rename = "forum")]
+    Forum,
+}
+impl ::std::fmt::Display for ForumPatchSource {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Forum => f.write_str("forum"),
+        }
+    }
+}
+impl ::std::str::FromStr for ForumPatchSource {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "forum" => Ok(Self::Forum),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for ForumPatchSource {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for ForumPatchSource {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///`GenericData`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -1344,6 +1582,50 @@ pub struct HeroColors {
     pub style_hex: ::std::option::Option<::std::string::String>,
     pub ui: ::std::vec::Vec<i32>,
 }
+///`HeroCounterStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct HeroCounterStats {
+    ///The number of assists by `hero_id` when facing `enemy_hero_id`.
+    pub assists: i64,
+    ///The number of creeps killed by `hero_id` when facing `enemy_hero_id`.
+    pub creeps: i64,
+    ///The number of deaths by `hero_id` when facing `enemy_hero_id`.
+    pub deaths: i64,
+    ///The number of denies by `hero_id` when facing `enemy_hero_id`.
+    pub denies: i64,
+    ///The number of assists by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_assists: i64,
+    ///The number of creeps killed by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_creeps: i64,
+    ///The number of deaths by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_deaths: i64,
+    ///The number of denies by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_denies: i64,
+    ///The ID of the opposing hero. See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub enemy_hero_id: i32,
+    ///The number of kills by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_kills: i64,
+    ///The number of last hits by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_last_hits: i64,
+    ///The net worth of `enemy_hero_id` when facing `hero_id`.
+    pub enemy_networth: i64,
+    ///The amount of objective damage dealt by `enemy_hero_id` when facing `hero_id`.
+    pub enemy_obj_damage: i64,
+    ///The ID of the hero. See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_id: i32,
+    ///The number of kills by `hero_id` when facing `enemy_hero_id`.
+    pub kills: i64,
+    ///The number of last hits by `hero_id` when facing `enemy_hero_id`.
+    pub last_hits: i64,
+    ///The total number of matches played between `hero_id` and `enemy_hero_id` that meet the filter criteria.
+    pub matches_played: i64,
+    ///The net worth of `hero_id` when facing `enemy_hero_id`.
+    pub networth: i64,
+    ///The amount of objective damage dealt by `hero_id` when facing `enemy_hero_id`.
+    pub obj_damage: i64,
+    ///The number of times `hero_id` won the match when facing `enemy_hero_id`.
+    pub wins: i64,
+}
 ///`HeroDescription`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
 pub struct HeroDescription {
@@ -1490,6 +1772,65 @@ pub struct HeroPopularItems {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub timestamp: ::std::option::Option<i64>,
 }
+///`HeroStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct HeroStats {
+    pub account_id: i64,
+    pub accuracy: f64,
+    pub assists: i64,
+    pub assists_per_min: f64,
+    /**Average game time (seconds) of the first permanent buff pickup, over matches with
+    pickup timings (build 6712+, at least one permanent pickup), `null` without any.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub avg_first_permanent_buff_time_s: ::std::option::Option<f64>,
+    pub creeps_per_min: f64,
+    pub crit_shot_rate: f64,
+    pub damage_mitigated_per_min: f64,
+    pub damage_per_min: f64,
+    pub damage_per_soul: f64,
+    pub damage_taken_per_min: f64,
+    pub damage_taken_per_soul: f64,
+    pub deaths: i64,
+    pub deaths_per_min: f64,
+    pub denies_per_match: f64,
+    pub denies_per_min: f64,
+    pub ending_level: f64,
+    ///See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_id: i32,
+    pub kills: i64,
+    pub kills_per_min: f64,
+    pub last_hits_per_min: f64,
+    pub last_played: i64,
+    pub matches: ::std::vec::Vec<i64>,
+    pub matches_played: i64,
+    /**Matches by the MVP rank Valve awarded the player: index 0 is rank 1 (MVP), index 1 is
+    rank 2, index 2 is rank 3. Only the top three players of a match get a rank.*/
+    pub mvp_rank_counts: ::std::vec::Vec<i64>,
+    /**Matches played since Valve started reporting MVP ranks (2026-01-06). Divide
+    `mvp_rank_counts` by this, not by `matches_played`, when the time range reaches
+    further back.*/
+    pub mvp_rated_matches: i64,
+    pub networth_per_min: f64,
+    pub obj_damage_per_min: f64,
+    pub obj_damage_per_soul: f64,
+    /**Matches that carry buff pickup counts. Only matches ingested since build 6712 (late
+    September 2026) have them here, so divide by this rather than `matches_played`.*/
+    pub permanent_buff_matches: i64,
+    /**Permanent buff (power-up) pickups over the `permanent_buff_matches` matches. Buff
+    types: <https://api.deadlock-api.com/v1/assets/misc-entities>*/
+    pub permanent_buffs: i64,
+    /**Permanent buff pickups per minute over the `permanent_buff_matches` matches, `null`
+    without any.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub permanent_buffs_per_min: ::std::option::Option<f64>,
+    pub time_played: i64,
+    pub total_boss_damage: i64,
+    pub total_creep_damage: i64,
+    pub total_neutral_damage: i64,
+    pub total_player_damage: i64,
+    pub total_player_damage_taken: i64,
+    pub wins: i64,
+}
 ///`HeroStatsUi`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct HeroStatsUi {
@@ -1501,6 +1842,50 @@ pub struct HeroStatsUi {
 pub struct HeroStatsUiDisplay {
     pub category: ::std::string::String,
     pub stat_type: ::std::string::String,
+}
+///`HeroSynergyStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct HeroSynergyStats {
+    ///The number of assists by `hero_id1` when playing with `hero_id2`.
+    pub assists1: i64,
+    ///The number of assists by `hero_id2` when playing with `hero_id1`.
+    pub assists2: i64,
+    ///The number of creeps killed by `hero_id1` when playing with `hero_id2`.
+    pub creeps1: i64,
+    ///The number of creeps killed by `hero_id2` when playing with `hero_id1`.
+    pub creeps2: i64,
+    ///The number of deaths by `hero_id1` when playing with `hero_id2`.
+    pub deaths1: i64,
+    ///The number of deaths by `hero_id2` when playing with `hero_id1`.
+    pub deaths2: i64,
+    ///The number of denies by `hero_id1` when playing with `hero_id2`.
+    pub denies1: i64,
+    ///The number of denies by `hero_id2` when playing with `hero_id1`.
+    pub denies2: i64,
+    ///The ID of the first hero in the pair.
+    pub hero_id1: i32,
+    ///The ID of the second hero in the pair.
+    pub hero_id2: i32,
+    ///The number of kills by `hero_id1` when playing with `hero_id2`.
+    pub kills1: i64,
+    ///The number of kills by `hero_id2` when playing with `hero_id1`.
+    pub kills2: i64,
+    ///The number of last hits by `hero_id1` when playing with `hero_id2`.
+    pub last_hits1: i64,
+    ///The number of last hits by `hero_id2` when playing with `hero_id1`.
+    pub last_hits2: i64,
+    ///The total number of matches played where `hero_id1` and `hero_id2` were on the same team, meeting the filter criteria.
+    pub matches_played: i64,
+    ///The net worth of `hero_id1` when playing with `hero_id2`.
+    pub networth1: i64,
+    ///The net worth of `hero_id2` when playing with `hero_id1`.
+    pub networth2: i64,
+    ///The amount of objective damage dealt by `hero_id1` when playing with `hero_id2`.
+    pub obj_damage1: i64,
+    ///The amount of objective damage dealt by `hero_id2` when playing with `hero_id1`.
+    pub obj_damage2: i64,
+    ///The number of times the team won when both `hero_id1` and `hero_id2` were on the same team.
+    pub wins: i64,
 }
 ///`HeroType`
 #[derive(
@@ -1570,6 +1955,18 @@ impl ::std::convert::TryFrom<::std::string::String> for HeroType {
 pub struct ImagePair {
     pub png: ::std::string::String,
     pub webp: ::std::string::String,
+}
+///`IngestStatusResponse`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct IngestStatusResponse {
+    pub account_id: i64,
+    ///Whether the ingest tool uploaded a salt for this account within the window that was then verified.
+    pub active: bool,
+    ///Unix timestamp of the most recent verified upload within the window.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub last_upload_at: ::std::option::Option<i64>,
+    ///The window, in days, an upload must fall in to count.
+    pub window_days: i64,
 }
 ///`Item`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -1834,6 +2231,28 @@ impl ::std::convert::TryFrom<::std::string::String> for ItemSlotType {
         value.parse()
     }
 }
+///`ItemStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemStats {
+    ///Average buy time as percentage of match duration
+    pub avg_buy_time_relative: f64,
+    ///Average buy time in seconds (absolute)
+    pub avg_buy_time_s: f64,
+    ///Average sell time as percentage of match duration (for items that were sold)
+    pub avg_sell_time_relative: f64,
+    ///Average sell time in seconds (absolute, for items that were sold)
+    pub avg_sell_time_s: f64,
+    pub bucket: i64,
+    ///See more: <https://api.deadlock-api.com/v1/assets/items>
+    pub item_id: i64,
+    pub losses: i64,
+    pub matches: i64,
+    pub players: i64,
+    ///How many of the `matches` purchases were sold again. `sold / matches` is the sell rate.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub sold: ::std::option::Option<i64>,
+    pub wins: i64,
+}
 /**Item tooltip background of one slot type: the backer, its alpha mask and the
 color layer.*/
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -1848,6 +2267,15 @@ pub struct ItemTooltipBackers {
     pub spirit: ItemTooltipBacker,
     pub vitality: ItemTooltipBacker,
     pub weapon: ItemTooltipBacker,
+}
+///`KillDeathStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct KillDeathStats {
+    pub deaths: i64,
+    pub killer_team: i32,
+    pub kills: i64,
+    pub position_x: i32,
+    pub position_y: i32,
 }
 ///`LaneInfo`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -1901,6 +2329,28 @@ pub struct LastRankedMatch {
     ///Match start time as a unix timestamp.
     pub start_time: i64,
 }
+///`Leaderboard`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct Leaderboard {
+    ///The leaderboard entries.
+    pub entries: ::std::vec::Vec<LeaderboardEntry>,
+}
+///`LeaderboardEntry`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct LeaderboardEntry {
+    ///The account name of the player.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub account_name: ::std::option::Option<::std::string::String>,
+    ///The possible account IDs of the player. **CAVEAT: This is not always correct, as Steam account names are not unique.**
+    pub possible_account_ids: ::std::vec::Vec<i64>,
+    /**The player's place on the leaderboard, starting at 1. Players can share a place, and the
+    following places are then skipped (1, 2, 2, 4). Not a rank badge.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub rank: ::std::option::Option<i64>,
+    /**The top hero IDs of the player, as the game sends them. Since 2026-07-31 the game leaves
+    them empty for about half of the entries. See more: <https://api.deadlock-api.com/v1/assets/heroes>*/
+    pub top_hero_ids: ::std::vec::Vec<i64>,
+}
 ///A district / building label pair shown on the map (build 6711+).
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct MapDistrict {
@@ -1915,6 +2365,14 @@ pub struct MapDistrict {
     pub district: ::std::string::String,
     ///Localized district name, e.g. `Theater`.
     pub district_name: ::std::string::String,
+}
+///`MateStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct MateStats {
+    pub matches: ::std::vec::Vec<i64>,
+    pub matches_played: i64,
+    pub mate_id: i64,
+    pub wins: i64,
 }
 ///`MiniMapOffsets`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -1958,6 +2416,18 @@ pub struct ObjectiveParams {
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct OutcomeToWeights {
     pub outcomes_to_weights: ::std::collections::HashMap<::std::string::String, f64>,
+}
+///`PatchCategory`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct PatchCategory {
+    pub domain: ::std::string::String,
+    pub text: ::std::string::String,
+}
+///`PatchGuid`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct PatchGuid {
+    pub is_perma_link: bool,
+    pub text: ::std::string::String,
 }
 ///`PlayerMatchHistoryEntry`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -2447,6 +2917,62 @@ impl ::std::convert::TryFrom<::std::string::String> for StatsUsageFlag {
 pub struct SteamFriend {
     pub account_id: i64,
     pub friend_since: ::std::string::String,
+}
+///`SteamNews`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct SteamNews {
+    pub content: ::std::string::String,
+    pub guid: PatchGuid,
+    pub link: ::std::string::String,
+    pub pub_date: ::std::string::String,
+    pub title: ::std::string::String,
+}
+///`SteamNewsSource`
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum SteamNewsSource {
+    #[serde(rename = "steam")]
+    Steam,
+}
+impl ::std::fmt::Display for SteamNewsSource {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Steam => f.write_str("steam"),
+        }
+    }
+}
+impl ::std::str::FromStr for SteamNewsSource {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "steam" => Ok(Self::Steam),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for SteamNewsSource {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SteamNewsSource {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///`SteamProfile`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]

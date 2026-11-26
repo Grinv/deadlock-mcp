@@ -91,3 +91,103 @@ pub fn steam_search(query: &str) -> Result<(Vec<api::SteamProfile>, Source)> {
         Fresh::For(Duration::from_secs(HOUR)),
     )
 }
+
+/// Player stats change with every match the API ingests.
+const PLAYER: Fresh = Fresh::For(Duration::from_secs(600));
+/// Analytics are aggregated over many matches; the API itself caches them for an hour.
+const ANALYTICS: Fresh = Fresh::For(Duration::from_secs(HOUR));
+
+/// Per-hero stats of one player; `filters` is `&key=value...` (time range).
+pub fn player_hero_stats(account_id: u32, filters: &str) -> Result<(Vec<api::HeroStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/players/hero-stats?account_ids={account_id}{filters}"),
+        PLAYER,
+    )
+}
+
+pub fn mate_stats(account_id: u32, filters: &str) -> Result<(Vec<api::MateStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/players/{account_id}/mate-stats?game_mode=normal{filters}"),
+        PLAYER,
+    )
+}
+
+pub fn enemy_stats(account_id: u32, filters: &str) -> Result<(Vec<api::EnemyStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/players/{account_id}/enemy-stats?game_mode=normal{filters}"),
+        PLAYER,
+    )
+}
+
+/// Kills and deaths on a raster of the map; with `account_ids`, that player's own.
+pub fn kill_death_stats(filters: &str) -> Result<(Vec<api::KillDeathStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/kill-death-stats?game_mode=normal{filters}"),
+        PLAYER,
+    )
+}
+
+pub fn ingest_status(account_id: u32) -> Result<(api::IngestStatusResponse, Source)> {
+    get_json(
+        &format!("{API}/v1/players/{account_id}/ingest-status"),
+        Fresh::For(Duration::from_secs(60)),
+    )
+}
+
+pub fn builds(filters: &str) -> Result<(Vec<api::Build>, Source)> {
+    get_json(
+        &format!("{API}/v1/builds?only_latest=true{filters}"),
+        ANALYTICS,
+    )
+}
+
+pub fn hero_stats(filters: &str) -> Result<(Vec<api::AnalyticsHeroStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/hero-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
+pub fn item_stats(filters: &str) -> Result<(Vec<api::ItemStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/item-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
+/// Every hero against every enemy hero; the endpoint has no hero filter.
+pub fn hero_counter_stats(filters: &str) -> Result<(Vec<api::HeroCounterStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/hero-counter-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
+/// Every pair of heroes on one team; the endpoint has no hero filter.
+pub fn hero_synergy_stats(filters: &str) -> Result<(Vec<api::HeroSynergyStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/hero-synergy-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
+pub fn ability_order_stats(
+    hero_id: u32,
+    filters: &str,
+) -> Result<(Vec<api::AnalyticsAbilityOrderStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/ability-order-stats?hero_id={hero_id}{filters}"),
+        ANALYTICS,
+    )
+}
+
+/// Patch notes from the official forum changelog and Steam news, newest first.
+pub fn patches() -> Result<(Vec<api::FeedItem>, Source)> {
+    get_json(&format!("{API}/v2/patches"), ANALYTICS)
+}
+
+/// Valve updates the leaderboard once an hour. `region` is one of the API's region names.
+pub fn leaderboard(region: &str, hero_id: Option<u32>) -> Result<(api::Leaderboard, Source)> {
+    let hero = hero_id.map_or_default(|h| format!("/{h}"));
+    get_json(&format!("{API}/v1/leaderboard/{region}{hero}"), ANALYTICS)
+}

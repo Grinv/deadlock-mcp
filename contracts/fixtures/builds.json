@@ -1,0 +1,112 @@
+[
+ {
+  "hero_build": {
+   "hero_id": 12,
+   "hero_build_id": 568186,
+   "author_account_id": 1310475170,
+   "last_updated_timestamp": 1777720907,
+   "publish_timestamp": 1777720907,
+   "name": "Beam build [400 DPS]",
+   "description": "1",
+   "language": 8,
+   "version": 15,
+   "origin_build_id": 242869,
+   "tags": [
+    2351041382,
+    2351041382,
+    2351041382
+   ],
+   "development_build": null,
+   "details": {
+    "mod_categories": [
+     {
+      "name": "Line",
+      "width": 370.5,
+      "height": 301.5,
+      "description": "",
+      "mods": [
+       {
+        "ability_id": 3074274290,
+        "annotation": "",
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 3776945997,
+        "annotation": null,
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 1150006784,
+        "annotation": "",
+        "required_flex_slots": null,
+        "sell_priority": 2,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 1102081447,
+        "annotation": "",
+        "required_flex_slots": null,
+        "sell_priority": 3,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 7409189,
+        "annotation": null,
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 2566692615,
+        "annotation": null,
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 2447176615,
+        "annotation": null,
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": null
+       },
+       {
+        "ability_id": 754480263,
+        "annotation": null,
+        "required_flex_slots": null,
+        "sell_priority": null,
+        "imbue_target_ability_id": 2351041382
+       }
+      ],
+      "optional": null
+     }
+    ],
+    "ability_order": {
+     "currency_changes": [
+      {
+       "ability_id": 18921423,
+       "currency_type": 2,
+       "delta": -1,
+       "annotation": null
+      },
+      {
+       "ability_id": 18921423,
+       "currency_type": 1,
+       "delta": -1,
+       "annotation": null
+      }
+     ]
+    }
+   }
+  },
+  "num_favorites": null,
+  "num_ignores": null,
+  "num_reports": null,
+  "num_weekly_favorites": 3021,
+  "rollup_category": 3
+ }
+]

@@ -1,0 +1,28 @@
+[
+ {
+  "source": "forum",
+  "title": "09-29-2026",
+  "pub_date": "2026-10-15T03:12:00Z",
+  "link": "https://forums.playdeadlock.com/threads/09-29-2026.166726/",
+  "guid": {
+   "is_perma_link": false,
+   "text": "urn:xenforo:thread:166726"
+  },
+  "category": {
+   "domain": "https://forums.playdeadlock.com/forums/changelog.10/",
+   "text": "Changelog"
+  },
+  "content": "<div class=\"bbWrapper\"><div class=\"bbCodeBlock bbCodeBlock--unfurl    js-unfurl fauxBlockLink\"\n\t\tdata-unfurl=\"true\" data-result-id=\"11817\" data-result-token=\"1795695890:33d35e8cee0d99be962398f617c9b0d9c30c1b750e1cbcb8fb6efc6a071d414d\" data-url=\"https://store.steampowered.com/news/app/1422450/view/69"
+ },
+ {
+  "source": "steam",
+  "title": "Ranked - Beta Season 2",
+  "pub_date": "2026-11-05T19:58:14Z",
+  "link": "https://store.steampowered.com/news/app/1422450/view/680766201707627248",
+  "guid": {
+   "is_perma_link": true,
+   "text": "https://store.steampowered.com/news/app/1422450/view/680766201707627248"
+  },
+  "content": "<p class=\"bb_paragraph\"><img src=\"https://clan.fastly.steamstatic.com/images/45164767/128f6aad08d9391a99f7e91565ea3a4b8dbef37e/english.png\" data-fallback-src=\"https://clan.fastly.steamstatic.com/images/45164767/128f6aad08d9391a99f7e91565ea3a4b8dbef37e.png\" onerror=\"this.onerror=null; this.src=this.d"
+ }
+]

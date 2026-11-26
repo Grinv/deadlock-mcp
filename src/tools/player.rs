@@ -1,6 +1,8 @@
-//! `player_search` and `player_overview`.
+//! `player_search`, `player_overview`, and a player's stats from the Deadlock API: `player_heroes`,
+//! `player_mates`, `player_enemies`, `player_deaths_map` and `ingest_status`.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -12,6 +14,7 @@ use crate::domain::outcome::{PlayerResult, player_result};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::sources::api;
+use crate::tools::{Filters, round, take, win_rate};
 
 const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 
@@ -212,5 +215,343 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
             .chain(profile_source)
             .chain(cat.stale_sources())
             .collect(),
+    })
+}
+
+/// Steam names of `ids` in one request. Names only decorate an answer, so a failure is logged
+/// and the answer goes on without them.
+pub fn steam_names(ids: &[u32]) -> (HashMap<u32, String>, Option<Source>) {
+    if ids.is_empty() {
+        return (HashMap::new(), None);
+    }
+    match api::steam_profiles(ids) {
+        Ok((profiles, source)) => (
+            profiles
+                .into_iter()
+                .filter_map(|p| Some((u32::try_from(p.account_id).ok()?, plain(&p.personaname))))
+                .collect(),
+            Some(source),
+        ),
+        Err(problem) => {
+            eprintln!("deadlock-mcp: steam names: {}", problem.message());
+            (HashMap::new(), None)
+        }
+    }
+}
+
+fn id32(id: i64) -> u32 {
+    u32::try_from(id).unwrap_or_default()
+}
+
+#[expect(clippy::cast_precision_loss, reason = "counts are far below 2^52")]
+fn per(total: i64, matches: i64) -> f64 {
+    if matches == 0 {
+        0.0
+    } else {
+        round(total as f64 / matches as f64, 2)
+    }
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PlayerHero {
+    pub hero: String,
+    pub matches: i64,
+    pub wins: i64,
+    /// Wins over matches, 0..1.
+    pub win_rate: Option<f64>,
+    pub kills_per_match: f64,
+    pub deaths_per_match: f64,
+    pub assists_per_match: f64,
+    pub souls_per_min: f64,
+    pub player_damage_per_min: f64,
+    /// Shots hit over shots fired, 0..1.
+    pub accuracy: f64,
+    pub hours_played: f64,
+    pub last_played: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PlayerHeroes {
+    pub account_id: u32,
+    /// Matches over all heroes in the time range.
+    pub matches: i64,
+    /// Heroes played, most played first.
+    pub heroes: Vec<PlayerHero>,
+    /// Heroes played but not listed (over `limit`).
+    pub more_heroes: usize,
+    pub sources: Vec<Source>,
+}
+
+pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHeroes> {
+    let cat = catalog()?;
+    let filters = Filters {
+        days,
+        ..Filters::default()
+    };
+    let (mut stats, source) = api::player_hero_stats(account_id, &filters.query())?;
+    if stats.is_empty() {
+        return Err(Problem::not_found(format!(
+            "the Deadlock API has no matches for account {account_id} in that time; check the id with player_search"
+        )));
+    }
+    stats.sort_by(|a, b| {
+        b.matches_played
+            .cmp(&a.matches_played)
+            .then(a.hero_id.cmp(&b.hero_id))
+    });
+    let matches = stats.iter().map(|h| h.matches_played).sum();
+    let more_heroes = stats.len().saturating_sub(take(limit));
+    let heroes = stats
+        .iter()
+        .take(take(limit))
+        .map(|h| PlayerHero {
+            hero: cat.hero(id32(h.hero_id.into())),
+            matches: h.matches_played,
+            wins: h.wins,
+            win_rate: win_rate(h.wins, h.matches_played),
+            kills_per_match: per(h.kills, h.matches_played),
+            deaths_per_match: per(h.deaths, h.matches_played),
+            assists_per_match: per(h.assists, h.matches_played),
+            souls_per_min: round(h.networth_per_min, 1),
+            player_damage_per_min: round(h.damage_per_min, 1),
+            accuracy: round(h.accuracy, 3),
+            hours_played: per(h.time_played, 3600),
+            last_played: date(h.last_played),
+        })
+        .collect();
+    Ok(PlayerHeroes {
+        account_id,
+        matches,
+        heroes,
+        more_heroes,
+        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+    })
+}
+
+/// Another player and how matches with or against them went.
+#[derive(Serialize, JsonSchema)]
+pub struct Partner {
+    pub account_id: u32,
+    pub steam_name: Option<String>,
+    pub matches: i64,
+    /// Matches the player won with (or against) them.
+    pub wins: i64,
+    /// Wins over matches, 0..1.
+    pub win_rate: Option<f64>,
+}
+
+fn partners(
+    rows: impl Iterator<Item = (u32, i64, i64)>,
+    names: &HashMap<u32, String>,
+) -> Vec<Partner> {
+    rows.map(|(id, matches, wins)| Partner {
+        account_id: id,
+        steam_name: names.get(&id).cloned(),
+        matches,
+        wins,
+        win_rate: win_rate(wins, matches),
+    })
+    .collect()
+}
+
+fn player_filters(days: Option<u32>, min_matches: u32) -> String {
+    let filters = Filters {
+        days,
+        ..Filters::default()
+    };
+    format!("{}&min_matches_played={min_matches}", filters.query())
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PlayerMates {
+    pub account_id: u32,
+    /// Only mates who queued in the same party.
+    pub same_party: bool,
+    /// Most matches together first.
+    pub mates: Vec<Partner>,
+    pub sources: Vec<Source>,
+}
+
+pub fn mates(
+    account_id: u32,
+    same_party: bool,
+    days: Option<u32>,
+    min_matches: u32,
+    limit: u32,
+) -> Result<PlayerMates> {
+    let query = format!(
+        "{}&same_party={same_party}",
+        player_filters(days, min_matches)
+    );
+    let (mut rows, source) = api::mate_stats(account_id, &query)?;
+    rows.sort_by(|a, b| {
+        b.matches_played
+            .cmp(&a.matches_played)
+            .then(b.wins.cmp(&a.wins))
+    });
+    rows.truncate(take(limit));
+    let ids: Vec<u32> = rows.iter().map(|m| id32(m.mate_id)).collect();
+    let (names, names_source) = steam_names(&ids);
+    Ok(PlayerMates {
+        account_id,
+        same_party,
+        mates: partners(
+            rows.iter()
+                .map(|m| (id32(m.mate_id), m.matches_played, m.wins)),
+            &names,
+        ),
+        sources: std::iter::once(source).chain(names_source).collect(),
+    })
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct Enemies {
+    pub account_id: u32,
+    /// Opponents met most often; `wins` are the player's wins against them.
+    pub most_met: Vec<Partner>,
+    /// Opponents the player lost to most often (most losses, then the lowest win rate).
+    pub most_lost_to: Vec<Partner>,
+    pub sources: Vec<Source>,
+}
+
+pub fn enemies(
+    account_id: u32,
+    days: Option<u32>,
+    min_matches: u32,
+    limit: u32,
+) -> Result<Enemies> {
+    let (rows, source) = api::enemy_stats(account_id, &player_filters(days, min_matches))?;
+    let row = |e: &&crate::contracts::api::EnemyStats| (id32(e.enemy_id), e.matches_played, e.wins);
+    let mut met: Vec<_> = rows.iter().collect();
+    met.sort_by(|a, b| {
+        b.matches_played
+            .cmp(&a.matches_played)
+            .then(a.enemy_id.cmp(&b.enemy_id))
+    });
+    met.truncate(take(limit));
+    let mut lost: Vec<_> = rows.iter().filter(|e| e.matches_played > e.wins).collect();
+    lost.sort_by(|a, b| {
+        let losses = |e: &crate::contracts::api::EnemyStats| e.matches_played - e.wins;
+        losses(b)
+            .cmp(&losses(a))
+            .then((a.wins * b.matches_played).cmp(&(b.wins * a.matches_played)))
+            .then(a.enemy_id.cmp(&b.enemy_id))
+    });
+    lost.truncate(take(limit));
+    let mut ids: Vec<u32> = met.iter().chain(&lost).map(|e| id32(e.enemy_id)).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let (names, names_source) = steam_names(&ids);
+    Ok(Enemies {
+        account_id,
+        most_met: partners(met.iter().map(row), &names),
+        most_lost_to: partners(lost.iter().map(row), &names),
+        sources: std::iter::once(source).chain(names_source).collect(),
+    })
+}
+
+/// The API's raster cells are 128 map units; hotspots sum them into squares of this size.
+const HOTSPOT: i32 = 1024;
+
+#[derive(Serialize, JsonSchema)]
+pub struct Hotspot {
+    /// Center of a 1024-unit square, in the map coordinates `match_player` gives death positions in.
+    pub x: i32,
+    pub y: i32,
+    pub deaths: i64,
+    pub kills: i64,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DeathsMap {
+    pub account_id: u32,
+    pub hero: Option<String>,
+    /// The player's deaths and kills in the time range.
+    pub deaths: i64,
+    pub kills: i64,
+    /// Where the player died most, most deaths first.
+    pub death_hotspots: Vec<Hotspot>,
+    /// Where the player got the most kills, most kills first.
+    pub kill_hotspots: Vec<Hotspot>,
+    pub sources: Vec<Source>,
+}
+
+pub fn deaths_map(
+    account_id: u32,
+    hero: Option<&str>,
+    days: Option<u32>,
+    limit: u32,
+) -> Result<DeathsMap> {
+    let cat = catalog()?;
+    let hero_id = hero.map(|h| cat.find_hero(h)).transpose()?;
+    let filters = Filters {
+        days,
+        ..Filters::default()
+    };
+    let mut query = format!("&account_ids={account_id}{}", filters.query());
+    if let Some(h) = hero_id {
+        let _ = write!(query, "&hero_ids={h}");
+    }
+    let (cells, source) = api::kill_death_stats(&query)?;
+    let mut squares: HashMap<(i32, i32), (i64, i64)> = HashMap::new();
+    for c in &cells {
+        let sq = squares
+            .entry((
+                c.position_x.div_euclid(HOTSPOT),
+                c.position_y.div_euclid(HOTSPOT),
+            ))
+            .or_default();
+        sq.0 += c.deaths;
+        sq.1 += c.kills;
+    }
+    let spots = |by_deaths: bool| -> Vec<Hotspot> {
+        let mut v: Vec<Hotspot> = squares
+            .iter()
+            .map(|(&(x, y), &(deaths, kills))| Hotspot {
+                x: x * HOTSPOT + HOTSPOT / 2,
+                y: y * HOTSPOT + HOTSPOT / 2,
+                deaths,
+                kills,
+            })
+            .filter(|s| if by_deaths { s.deaths > 0 } else { s.kills > 0 })
+            .collect();
+        v.sort_by_key(|s| {
+            let n = if by_deaths { s.deaths } else { s.kills };
+            (std::cmp::Reverse(n), s.x, s.y)
+        });
+        v.truncate(take(limit));
+        v
+    };
+    Ok(DeathsMap {
+        account_id,
+        hero: hero_id.map(|h| cat.hero(h)),
+        deaths: cells.iter().map(|c| c.deaths).sum(),
+        kills: cells.iter().map(|c| c.kills).sum(),
+        death_hotspots: spots(true),
+        kill_hotspots: spots(false),
+        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+    })
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct IngestStatus {
+    pub account_id: u32,
+    /// The player ran the deadlock-api-ingest tool within the window, so the API gets their
+    /// matches (with replays' details) as they play them.
+    pub active: bool,
+    /// Date of the latest verified upload in the window.
+    pub last_upload: Option<String>,
+    pub window_days: i64,
+    pub sources: Vec<Source>,
+}
+
+pub fn ingest_status(account_id: u32) -> Result<IngestStatus> {
+    let (s, source) = api::ingest_status(account_id)?;
+    Ok(IngestStatus {
+        account_id,
+        active: s.active,
+        last_upload: s.last_upload_at.map(date),
+        window_days: s.window_days,
+        sources: vec![source],
     })
 }

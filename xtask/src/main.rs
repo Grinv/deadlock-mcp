@@ -13,9 +13,22 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 /// Deadlock API response schemas the server reads; their dependencies are pulled in.
 const API_SCHEMAS: &[&str] = &[
+    "AnalyticsAbilityOrderStats",
+    "AnalyticsHeroStats",
+    "Build",
+    "EnemyStats",
+    "FeedItem",
     "GenericData",
     "Hero",
+    "HeroCounterStats",
+    "HeroStats",
+    "HeroSynergyStats",
+    "IngestStatusResponse",
     "Item",
+    "ItemStats",
+    "KillDeathStats",
+    "Leaderboard",
+    "MateStats",
     "PlayerMatchHistoryEntry",
     "Rank",
     "RankResponse",
@@ -166,6 +179,14 @@ fn valve(root: &Path) -> Result<()> {
 fn write(root: &Path, file: &str, code: &str) -> Result<()> {
     let path = root.join("src/contracts").join(file);
     fs::write(&path, code)?;
+    // The committed files are rustfmt's layout; formatting here keeps a regeneration diff-free.
+    let status = std::process::Command::new("rustfmt")
+        .args(["--edition", "2024"])
+        .arg(&path)
+        .status()?;
+    if !status.success() {
+        return Err(format!("rustfmt failed on {}", path.display()).into());
+    }
     println!("wrote {} ({} lines)", path.display(), code.lines().count());
     Ok(())
 }

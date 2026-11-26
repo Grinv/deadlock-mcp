@@ -9,8 +9,9 @@ use crate::contracts::valve::ECitadelLobbyTeam;
 use crate::contracts::valve::c_msg_match_meta_data_contents::{
     MatchInfo, PlayerStats, Players, Position,
 };
-use crate::domain::assets::{Catalog, ItemKind, Lane, catalog};
+use crate::domain::assets::{Catalog, Lane, catalog};
 use crate::domain::format::{date, mmss, plain};
+use crate::domain::items::ItemKind;
 use crate::domain::outcome::{PlayerResult, note, player_result};
 use crate::domain::terms::{game_mode_name, gold_source_name, match_mode_name, team_name};
 use crate::http::Source;

@@ -6,7 +6,7 @@ use std::time::Duration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::format::plain;
+use crate::domain::format::{plain, strip_tags};
 use crate::http::{Fresh, Source, encode, get_json};
 use crate::problem::{Kind, Problem, Result};
 
@@ -43,24 +43,8 @@ pub struct Page {
     pub sources: Vec<Source>,
 }
 
-fn page_url(title: &str) -> String {
+pub fn page_url(title: &str) -> String {
     format!("https://deadlock.wiki/{}", encode(&title.replace(' ', "_")))
-}
-
-fn strip_tags(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut in_tag = false;
-    for c in s.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
-        }
-    }
-    out.replace("&quot;", "\"")
-        .replace("&#039;", "'")
-        .replace("&amp;", "&")
 }
 
 /// The parts of `MediaWiki` `action=query` answers this module reads.
@@ -208,10 +192,6 @@ mod tests {
         assert_eq!(
             page_url("Sinner's Sacrifice"),
             "https://deadlock.wiki/Sinner%27s_Sacrifice"
-        );
-        assert_eq!(
-            strip_tags("<span class=\"searchmatch\">Rift</span> &amp; urn"),
-            "Rift & urn"
         );
     }
 }

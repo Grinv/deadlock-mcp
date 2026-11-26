@@ -1,0 +1,35 @@
+{
+ "entries": [
+  {
+   "account_name": "cosmetical",
+   "possible_account_ids": [
+    483770846,
+    1207237380,
+    1871096785,
+    1269154568,
+    815629613
+   ],
+   "rank": 1,
+   "top_hero_ids": [
+    7
+   ]
+  },
+  {
+   "account_name": "Zerggy",
+   "possible_account_ids": [
+    35187362,
+    857309003,
+    1744399850,
+    744733712,
+    757547676,
+    744702849,
+    216121770,
+    1702536495
+   ],
+   "rank": 2,
+   "top_hero_ids": [
+    7
+   ]
+  }
+ ]
+}

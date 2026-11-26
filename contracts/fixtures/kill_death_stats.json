@@ -1,0 +1,23 @@
+[
+ {
+  "position_x": -768,
+  "position_y": -3840,
+  "killer_team": 0,
+  "deaths": 1,
+  "kills": 0
+ },
+ {
+  "position_x": 2432,
+  "position_y": 4864,
+  "killer_team": 1,
+  "deaths": 1,
+  "kills": 0
+ },
+ {
+  "position_x": -4352,
+  "position_y": -1152,
+  "killer_team": 0,
+  "deaths": 0,
+  "kills": 1
+ }
+]
