@@ -2,5 +2,19 @@
 name = "deadlock-mcp"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.100"
+description = "MCP server for Deadlock: match and player statistics from the Deadlock API, game knowledge from the Deadlock Wiki"
+license = "MIT"
 
 [dependencies]
+rmcp = { version = "3.11.0", features = ["server", "transport-io", "macros"] }
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
+ureq = "3.5.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
