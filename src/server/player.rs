@@ -6,7 +6,7 @@ use rmcp::{tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::{DeadlockServer, default_ten, input_schema, parse, run};
+use super::{DeadlockServer, default_ten, default_window_days, input_schema, parse, run};
 use crate::tools::player;
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -111,9 +111,10 @@ pub struct PlayerDeathsMapArgs {
     /// Only matches on this hero: a name (or a unique part of it) or a hero id.
     #[garde(inner(length(chars, min = 1, max = 50)))]
     pub hero: Option<String>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
     /// How many hotspots per list.
     #[serde(default = "default_ten")]
     #[garde(range(min = 1, max = 50))]
@@ -205,7 +206,8 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<player::DeathsMap>, CallToolResult> {
         let a: PlayerDeathsMapArgs = parse(raw)?;
-        run(move || player::deaths_map(a.account_id, a.hero.as_deref(), a.days, a.limit)).await
+        run(move || player::deaths_map(a.account_id, a.hero.as_deref(), Some(a.days), a.limit))
+            .await
     }
 
     /// Whether the player runs the API's ingest tool, which sends their matches as they play.

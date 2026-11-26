@@ -6,7 +6,7 @@ use rmcp::{tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::{DeadlockServer, default_ten, input_schema, parse, run};
+use super::{DeadlockServer, default_ten, default_window_days, input_schema, parse, run};
 use crate::contracts::api::PlayerStatsMetricsKey;
 use crate::tools::meta::{HeroSort, Region};
 use crate::tools::{Filters, game, meta};
@@ -43,9 +43,10 @@ pub struct HeroStatsArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
     /// Leave out heroes with fewer matches.
     #[serde(default = "default_hundred")]
     #[garde(range(min = 1))]
@@ -77,9 +78,10 @@ pub struct HeroItemsArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
     /// Leave out items bought in fewer matches.
     #[serde(default = "default_hundred")]
     #[garde(range(min = 1))]
@@ -107,9 +109,10 @@ pub struct HeroPairArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
     /// Leave out pairs with fewer matches.
     #[serde(default = "default_hundred")]
     #[garde(range(min = 1))]
@@ -133,9 +136,10 @@ pub struct AbilityOrderArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
     /// Leave out orders played in fewer matches.
     #[serde(default = "default_hundred")]
     #[garde(range(min = 1))]
@@ -187,9 +191,10 @@ pub struct PerformanceCurveArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
 }
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -211,16 +216,17 @@ pub struct StatPercentilesArgs {
     /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
     #[garde(inner(range(max = 116)))]
     pub max_badge: Option<u8>,
-    /// Only matches of the last this many days; the last 30 days when left out.
-    #[garde(inner(range(min = 1, max = 365)))]
-    pub days: Option<u32>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
 }
 
-fn filters(min_badge: Option<u8>, max_badge: Option<u8>, days: Option<u32>) -> Filters {
+fn filters(min_badge: Option<u8>, max_badge: Option<u8>, days: u32) -> Filters {
     Filters {
         min_badge,
         max_badge,
-        days,
+        days: Some(days),
     }
 }
 
@@ -373,5 +379,22 @@ impl DeadlockServer {
     ) -> Result<Json<meta::Leaderboard>, CallToolResult> {
         let a: LeaderboardArgs = parse(raw)?;
         run(move || meta::leaderboard(a.region, a.hero.as_deref(), a.limit)).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A meta tool called without `days` reads the last 30 days, not all of the API's history.
+    #[test]
+    fn meta_window_defaults_to_30_days() {
+        let args: HeroStatsArgs = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(args.days, 30);
+        assert!(
+            filters(None, None, args.days)
+                .query()
+                .contains("&min_unix_timestamp=")
+        );
     }
 }

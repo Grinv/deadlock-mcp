@@ -263,9 +263,10 @@ pub struct PlayerReport {
     pub unspent: Option<Unspent>,
     /// Permanent stat buffs picked up (golden statues and the urn), by type.
     pub permanent_buffs: HashMap<String, u32>,
-    /// Stats behind the end-of-match awards the game picked for this player. Some appear nowhere
-    /// else: crates broken (`breakables_destroyed`), damage by bullets, abilities or melee,
-    /// headshots. Players get different subsets, so a missing stat means "not picked", not zero.
+    /// Stats behind the end-of-match awards the game picked for this player, the earned ones first.
+    /// Some appear nowhere else: crates broken (`breakables_destroyed`), damage by bullets, abilities
+    /// or melee, headshots. Players get different subsets, so a missing stat means "not picked", not
+    /// zero.
     pub awards: Vec<Award>,
     pub deaths_detail: Vec<Death>,
     pub purchases: Vec<Purchase>,
@@ -340,13 +341,16 @@ pub struct Award {
     /// The stat it tracks, e.g. `breakables_destroyed`, `headshots`, `ability_damage`.
     pub stat: String,
     pub value: i32,
-    /// The tier the game reports; it doesn't document the scale, and most stats show -1.
-    pub tier: i32,
+    /// The award's threshold the player reached, from 0; `None` when they reached none, so the award
+    /// was not earned and `value` is only a stat. The game sets the thresholds, so a higher value
+    /// does not always mean a higher level than another player's.
+    pub level: Option<u8>,
 }
 
-/// The player's award stats, named from the game's award list.
+/// The player's award stats, named from the game's award list, the earned ones first.
 fn awards(cat: &Catalog, p: &Players) -> Vec<Award> {
-    p.accolades
+    let mut awards: Vec<Award> = p
+        .accolades
         .iter()
         .filter_map(|a| {
             let info = cat.accolade(a.accolade_id())?;
@@ -354,10 +358,13 @@ fn awards(cat: &Catalog, p: &Players) -> Vec<Award> {
                 name: info.flavor_name.clone(),
                 stat: info.tracked_stat_name.clone(),
                 value: a.accolade_stat_value(),
-                tier: a.accolade_threshold_achieved(),
+                // The game reports -1 for no threshold reached.
+                level: u8::try_from(a.accolade_threshold_achieved()).ok(),
             })
         })
-        .collect()
+        .collect();
+    awards.sort_by_key(|a| core::cmp::Reverse(a.level));
+    awards
 }
 
 /// Shop items bought (abilities and weapons are left out), with buy and sell times.

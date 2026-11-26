@@ -8,8 +8,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
-- `match_player` lists the stats behind the end-of-match awards, among them crates broken, damage by
-  bullets, abilities and melee, and headshots.
+- `match_player` lists the stats behind the end-of-match awards, the earned ones first with the
+  threshold reached, among them crates broken, damage by bullets, abilities and melee, and
+  headshots.
 - Players: find an account by Steam name, SteamID64 or profile link; a player's rank, win rate,
   heroes, teammates, opponents, where on the map they die and kill, and whether the API receives
   their matches.

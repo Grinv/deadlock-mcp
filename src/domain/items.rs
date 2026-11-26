@@ -40,7 +40,7 @@ const MAX_TEXT: usize = 600;
 const MAX_PROPERTIES: usize = 12;
 
 /// Tooltip markup as plain text, cut at `MAX_TEXT` characters.
-fn text(parts: &[&Option<String>]) -> Option<String> {
+pub(crate) fn text(parts: &[&Option<String>]) -> Option<String> {
     let joined: Vec<String> = parts
         .iter()
         .filter_map(|p| p.as_deref())

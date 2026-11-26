@@ -118,6 +118,12 @@ pub(super) const fn default_ten() -> u32 {
     10
 }
 
+/// The window of the meta tools and the deaths map when `days` is left out. A typed default, so the
+/// schema shows it and no tool can leave the window open by accident.
+pub(super) const fn default_window_days() -> u32 {
+    30
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct ReviewMatchArgs {
     /// The player: a Steam name, an account id, a `SteamID64` or a profile link.

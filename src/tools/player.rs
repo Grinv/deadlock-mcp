@@ -184,7 +184,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
         wins,
         losses,
         not_scored,
-        win_rate: (scored > 0).then(|| f64::from(wins) / f64::from(scored)),
+        win_rate: win_rate(i64::from(wins), i64::from(scored)),
         top_heroes: top
             .into_iter()
             .take(5)

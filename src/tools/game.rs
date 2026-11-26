@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::contracts::api::FeedItem;
 use crate::domain::assets::catalog;
 use crate::domain::format::{bounded, plain, strip_tags};
-use crate::domain::items::{Item, ItemKind};
+use crate::domain::items::{self, Item, ItemKind};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 
@@ -46,8 +46,13 @@ pub struct Entry {
     pub cost: Option<i64>,
     /// A hero's abilities.
     pub abilities: Vec<String>,
-    /// The game's tooltip text (cut at 600 characters); a hero's role.
+    /// The game's tooltip text of an ability or item (cut at 600 characters).
     pub description: Option<String>,
+    /// A hero's role in a line, e.g. "Sneaks in and sprays bullets". The game files leave it out
+    /// for many heroes; `lore` is there for them.
+    pub role: Option<String>,
+    /// The start of a hero's lore (cut at 600 characters); `deadlock://hero/{id}` has all of it.
+    pub lore: Option<String>,
     /// What each of an ability's three upgrades (1, 2, 3 ability points) adds.
     pub upgrades: Vec<String>,
     /// The tooltip's labelled values at base level, e.g. "Cooldown: 28s" (at most 12).
@@ -80,10 +85,13 @@ pub fn lookup(query: &str) -> Result<Lookup> {
         cost: i.cost,
         abilities: Vec::new(),
         description: i.description.clone(),
+        role: None,
+        lore: None,
         upgrades: i.upgrades.clone(),
         properties: i.properties.clone(),
     };
     let hero_entry = |id: u32, name: &str| {
+        let info = cat.hero_info.get(&id);
         let mut abilities: Vec<&Item> = cat
             .items
             .values()
@@ -102,7 +110,9 @@ pub fn lookup(query: &str) -> Result<Lookup> {
                 .into_iter()
                 .map(|i| format!("{} ({})", i.name, i.id))
                 .collect(),
-            description: cat.hero_info.get(&id).and_then(|h| h.role.clone()),
+            description: None,
+            role: info.and_then(|h| h.role.clone()),
+            lore: info.and_then(|h| items::text(&[&h.lore])),
             upgrades: Vec::new(),
             properties: Vec::new(),
         }
