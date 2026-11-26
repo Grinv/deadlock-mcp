@@ -151,6 +151,7 @@ impl From<api::Item> for Item {
                 cost,
                 description: d,
                 properties: props,
+                tooltip_sections,
                 ..
             } => Self {
                 id: id32(id),
@@ -160,7 +161,18 @@ impl From<api::Item> for Item {
                 hero: hero.map(id32),
                 tier: Some(item_tier),
                 cost,
-                description: d.and_then(|d| text(&[&d.desc, &d.desc2, &d.active, &d.passive])),
+                // Some items (e.g. Cheat Death) carry their text only in the tooltip sections.
+                description: d
+                    .and_then(|d| text(&[&d.desc, &d.desc2, &d.active, &d.passive]))
+                    .or_else(|| {
+                        let parts: Vec<Option<String>> = tooltip_sections
+                            .iter()
+                            .flatten()
+                            .flat_map(|s| s.section_attributes.iter().flatten())
+                            .map(|a| a.loc_string.clone())
+                            .collect();
+                        text(&parts.iter().collect::<Vec<_>>())
+                    }),
                 upgrades: Vec::new(),
                 properties: properties(props, |p: &api::UpgradeProperty| {
                     property(

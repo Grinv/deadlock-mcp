@@ -392,13 +392,21 @@ pub struct HeroBuilds {
     pub sources: Vec<Source>,
 }
 
-pub fn builds(hero: &str, search: Option<&str>, limit: u32) -> Result<HeroBuilds> {
+pub fn builds(
+    hero: &str,
+    search: Option<&str>,
+    language: Option<crate::contracts::api::BuildLanguage>,
+    limit: u32,
+) -> Result<HeroBuilds> {
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let mut query =
         format!("&hero_id={hero_id}&sort_by=weekly_favorites&sort_direction=desc&limit={limit}");
     if let Some(s) = search {
         let _ = write!(query, "&search_name={}", crate::http::encode(s));
+    }
+    if let Some(language) = language {
+        let _ = write!(query, "&build_language={language}");
     }
     let (rows, source) = api::builds(&query)?;
     let ids: Vec<u32> = rows

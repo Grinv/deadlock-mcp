@@ -545,6 +545,104 @@ pub struct BuildHeroDetailsCategoryAbility {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub sell_priority: ::std::option::Option<i64>,
 }
+///`BuildLanguage`
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    schemars::JsonSchema,
+)]
+pub enum BuildLanguage {
+    English,
+    German,
+    French,
+    Italian,
+    Korean,
+    SpanishSpain,
+    ChineseSimplified,
+    Russian,
+    Thai,
+    Japanese,
+    PortuguesePortugal,
+    Polish,
+    Czech,
+    Turkish,
+    PortugueseBrazil,
+    Ukrainian,
+    SpanishLatinAmerica,
+    Vietnamese,
+}
+impl ::std::fmt::Display for BuildLanguage {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::English => f.write_str("English"),
+            Self::German => f.write_str("German"),
+            Self::French => f.write_str("French"),
+            Self::Italian => f.write_str("Italian"),
+            Self::Korean => f.write_str("Korean"),
+            Self::SpanishSpain => f.write_str("SpanishSpain"),
+            Self::ChineseSimplified => f.write_str("ChineseSimplified"),
+            Self::Russian => f.write_str("Russian"),
+            Self::Thai => f.write_str("Thai"),
+            Self::Japanese => f.write_str("Japanese"),
+            Self::PortuguesePortugal => f.write_str("PortuguesePortugal"),
+            Self::Polish => f.write_str("Polish"),
+            Self::Czech => f.write_str("Czech"),
+            Self::Turkish => f.write_str("Turkish"),
+            Self::PortugueseBrazil => f.write_str("PortugueseBrazil"),
+            Self::Ukrainian => f.write_str("Ukrainian"),
+            Self::SpanishLatinAmerica => f.write_str("SpanishLatinAmerica"),
+            Self::Vietnamese => f.write_str("Vietnamese"),
+        }
+    }
+}
+impl ::std::str::FromStr for BuildLanguage {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "English" => Ok(Self::English),
+            "German" => Ok(Self::German),
+            "French" => Ok(Self::French),
+            "Italian" => Ok(Self::Italian),
+            "Korean" => Ok(Self::Korean),
+            "SpanishSpain" => Ok(Self::SpanishSpain),
+            "ChineseSimplified" => Ok(Self::ChineseSimplified),
+            "Russian" => Ok(Self::Russian),
+            "Thai" => Ok(Self::Thai),
+            "Japanese" => Ok(Self::Japanese),
+            "PortuguesePortugal" => Ok(Self::PortuguesePortugal),
+            "Polish" => Ok(Self::Polish),
+            "Czech" => Ok(Self::Czech),
+            "Turkish" => Ok(Self::Turkish),
+            "PortugueseBrazil" => Ok(Self::PortugueseBrazil),
+            "Ukrainian" => Ok(Self::Ukrainian),
+            "SpanishLatinAmerica" => Ok(Self::SpanishLatinAmerica),
+            "Vietnamese" => Ok(Self::Vietnamese),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for BuildLanguage {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for BuildLanguage {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 /**RGBA color emitted by KV3 as a 3- or 4-element integer array. Alpha
 defaults to 255 when omitted.*/
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]

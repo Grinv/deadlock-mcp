@@ -35,6 +35,10 @@ const API_SCHEMAS: &[&str] = &[
     "SteamProfile",
 ];
 
+/// Enums the API declares inline on a query parameter: `(path, parameter, type name)`. They are
+/// generated as named types deriving `JsonSchema`, so tool arguments offer the API's own values.
+const API_PARAMS: &[(&str, &str, &str)] = &[("/v1/builds", "build_language", "BuildLanguage")];
+
 /// The match metadata message and what it imports.
 const PROTO_ROOT: &str = "citadel_gcmessages_common.proto";
 const PROTO_DIRS: &[&str] = &["deadlock", "common", "gcsdk"];
@@ -142,14 +146,27 @@ fn api(root: &Path) -> Result<()> {
             break;
         }
     }
-    let defs: serde_json::Map<String, Value> =
+    let mut defs: serde_json::Map<String, Value> =
         keep.iter().map(|n| (n.clone(), all[n].clone())).collect();
+    let mut settings = typify::TypeSpaceSettings::default();
+    for (path, param, name) in API_PARAMS {
+        let schema = spec["paths"][path]["get"]["parameters"]
+            .as_array()
+            .and_then(|ps| ps.iter().find(|p| p["name"] == *param))
+            .map(|p| p["schema"].clone())
+            .ok_or(format!("no parameter {param} on {path}"))?;
+        defs.insert((*name).to_owned(), schema);
+        settings.with_patch(
+            name,
+            typify::TypeSpacePatch::default().with_derive("schemars::JsonSchema"),
+        );
+    }
     let mut defs = Value::Object(defs);
     drop_date_time(&mut defs);
     title_variants(&mut defs);
     let text = serde_json::to_string(&serde_json::json!({ "$defs": defs }))?
         .replace("#/components/schemas/", "#/$defs/");
-    let mut space = typify::TypeSpace::new(&typify::TypeSpaceSettings::default());
+    let mut space = typify::TypeSpace::new(&settings);
     space.add_root_schema(serde_json::from_str(&text)?)?;
     let code = prettyplease::unparse(&syn::parse2(space.to_stream()?)?);
     write(root, "api.rs", &(header("contracts/openapi.json") + &code))

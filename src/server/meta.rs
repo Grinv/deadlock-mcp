@@ -23,6 +23,9 @@ pub struct BuildsArgs {
     /// Only builds whose name contains this text.
     #[garde(inner(length(chars, min = 1, max = 100)))]
     pub search: Option<String>,
+    /// Only builds written in this language; all languages when left out.
+    #[garde(skip)]
+    pub language: Option<crate::contracts::api::BuildLanguage>,
     /// How many builds to list.
     #[serde(default = "default_ten")]
     #[garde(range(min = 1, max = 50))]
@@ -190,7 +193,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::HeroBuilds>, CallToolResult> {
         let a: BuildsArgs = parse(raw)?;
-        run(move || meta::builds(&a.hero, a.search.as_deref(), a.limit)).await
+        run(move || meta::builds(&a.hero, a.search.as_deref(), a.language, a.limit)).await
     }
 
     /// Win rate, pick rate and matches per hero over all players' matches.
