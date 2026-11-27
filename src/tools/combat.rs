@@ -317,55 +317,96 @@ pub fn distance(
     )
 }
 
-/// How a player's path lines up with game time: sample = `rate` × second + `shift`. A path can
-/// start late (a player who loaded late), stop early (one who disconnected) or hold more samples
-/// than the match has seconds, so it is anchored on the player's deaths: the first sample with
-/// health 0 after each death falls at that death's `game_time_s`.
+/// How a player's path lines up with game time. A path can start late (a player who loaded late),
+/// stop early (one who disconnected) or hold more samples than the match has seconds, and its
+/// clock can jump, so it is anchored on the player's deaths: each death in `death_details` is
+/// paired with the drop of the path's health to 0 next to it, and the path runs linearly between
+/// those anchors. Some paths hold a drop to 0 that is no death and some deaths have no drop, so the
+/// pairing looks for the nearest drop rather than going by order.
 struct Clock {
-    rate: f64,
-    shift: f64,
+    /// Samples per game second and the sample at second 0, outside the anchors.
+    line: (f64, f64),
+    /// (game second, sample) of each paired death, in order.
+    anchors: Vec<(f64, f64)>,
+}
+
+/// Least squares through the pairs; one pair gives a shift at one sample a second.
+fn fit(pairs: &[(f64, f64)]) -> (f64, f64) {
+    let n = f64::from(u32::try_from(pairs.len()).unwrap_or(u32::MAX));
+    let (t, s) = (
+        pairs.iter().map(|p| p.0).sum::<f64>() / n,
+        pairs.iter().map(|p| p.1).sum::<f64>() / n,
+    );
+    let spread: f64 = pairs.iter().map(|p| (p.0 - t).powi(2)).sum();
+    let rate = if spread > 0.0 {
+        pairs.iter().map(|p| (p.0 - t) * (p.1 - s)).sum::<f64>() / spread
+    } else {
+        1.0
+    };
+    (rate, s - rate * t)
+}
+
+/// Each death with the drop to 0 nearest to where `line` puts it, if within `window` samples.
+fn pair(deaths: &[f64], drops: &[f64], line: (f64, f64), window: f64) -> Vec<(f64, f64)> {
+    deaths
+        .iter()
+        .filter_map(|&d| {
+            let guess = line.0 * d + line.1;
+            let drop = drops
+                .iter()
+                .copied()
+                .min_by(|a, b| (a - guess).abs().total_cmp(&(b - guess).abs()))?;
+            ((drop - guess).abs() <= window).then_some((d, drop))
+        })
+        .collect()
 }
 
 impl Clock {
     fn new(path: &Path, deaths: &[u32], duration: u32) -> Self {
-        let zeros = path
+        let samples = f64::from(u32::try_from(path.health.len().saturating_sub(1)).unwrap_or(0));
+        let duration = f64::from(duration.max(1));
+        // Without deaths to anchor on, the path is spread evenly over the match.
+        let spread = Self {
+            line: (samples / duration, 0.0),
+            anchors: Vec::new(),
+        };
+        let drops: Vec<f64> = path
             .health
             .windows(2)
             .zip(1u32..)
             .filter(|(w, _)| w[0] > 0 && w[1] == 0)
-            .map(|(_, i)| f64::from(i));
-        let mut deaths = deaths.to_vec();
-        deaths.sort_unstable();
-        let pairs: Vec<(f64, f64)> = deaths.into_iter().map(f64::from).zip(zeros).collect();
-        let n = f64::from(u32::try_from(pairs.len()).unwrap_or(u32::MAX));
-        let mean = |f: fn(&(f64, f64)) -> f64| pairs.iter().map(f).sum::<f64>() / n;
-        match pairs.len() {
-            // No deaths to anchor on: spread the path evenly over the match.
-            0 => {
-                let samples = u32::try_from(path.health.len().saturating_sub(1)).unwrap_or(0);
-                Self {
-                    rate: f64::from(samples) / f64::from(duration.max(1)),
-                    shift: 0.0,
-                }
+            .map(|(_, i)| f64::from(i))
+            .collect();
+        let mut deaths: Vec<f64> = deaths.iter().copied().map(f64::from).collect();
+        deaths.sort_by(f64::total_cmp);
+        // The shift that lines up the most deaths, within a minute more than the path is longer or
+        // shorter than the match; then a fit, paired again along it; the anchors are the deaths
+        // within 10 s of the fit.
+        let bound = (samples - duration).abs() + 60.0;
+        let (lo, hi) = (-bound, bound);
+        let lined_up = |shift: f64| pair(&deaths, &drops, (1.0, shift), 10.0).len();
+        let Some(shift) = deaths
+            .iter()
+            .flat_map(|d| drops.iter().map(move |z| z - d))
+            .filter(|s| (lo..=hi).contains(s))
+            .max_by(|a, b| {
+                lined_up(*a)
+                    .cmp(&lined_up(*b))
+                    .then(b.abs().total_cmp(&a.abs()))
+            })
+        else {
+            return spread;
+        };
+        let mut line = (1.0, shift);
+        for window in [10.0, 10.0, 3.0] {
+            let pairs = pair(&deaths, &drops, line, window);
+            if !pairs.is_empty() {
+                line = fit(&pairs);
             }
-            1 => Self {
-                rate: 1.0,
-                shift: pairs[0].1 - pairs[0].0,
-            },
-            // Least squares over the deaths.
-            _ => {
-                let (t, s) = (mean(|p| p.0), mean(|p| p.1));
-                let spread: f64 = pairs.iter().map(|p| (p.0 - t).powi(2)).sum();
-                let rate = if spread > 0.0 {
-                    pairs.iter().map(|p| (p.0 - t) * (p.1 - s)).sum::<f64>() / spread
-                } else {
-                    1.0
-                };
-                Self {
-                    rate,
-                    shift: s - rate * t,
-                }
-            }
+        }
+        Self {
+            anchors: pair(&deaths, &drops, line, 10.0),
+            line,
         }
     }
 
@@ -376,7 +417,17 @@ impl Clock {
         reason = "a whole number checked to lie in 0..len"
     )]
     fn sample(&self, t: u32, len: usize) -> Option<usize> {
-        let i = (self.rate * f64::from(t) + self.shift).round();
+        let t = f64::from(t);
+        let k = self.anchors.partition_point(|a| a.0 < t);
+        let i = match (
+            k.checked_sub(1).map(|j| self.anchors[j]),
+            self.anchors.get(k),
+        ) {
+            (Some((t0, s0)), Some(&(t1, s1))) if t1 > t0 => s0 + (s1 - s0) * (t - t0) / (t1 - t0),
+            (Some((t0, s0)), _) | (None, Some(&(t0, s0))) => s0 + self.line.0 * (t - t0),
+            (None, None) => self.line.0 * t + self.line.1,
+        }
+        .round();
         (i >= 0.0 && i < f64::from(u32::try_from(len).ok()?)).then_some(i as usize)
     }
 }
@@ -667,20 +718,27 @@ mod tests {
 
     #[test]
     fn clock_follows_the_deaths() {
-        // Running slow (more samples than seconds), starting late and stopping early, as seen in
-        // real matches: each death lands on its sample, and seconds off the path have none.
-        let slow = path_dying_at(1431, &[163, 795, 1393]);
-        let c = Clock::new(&slow, &[162, 782, 1366], 1403);
-        // A straight line through three deaths: each within a second.
-        for (t, at) in [(162, 163), (782, 795), (1366, 1393)] {
-            assert!(c.sample(t, 1431).unwrap().abs_diff(at) <= 1, "{t}");
-        }
+        // A real path that runs slow: its ten deaths show 1 to 27 s late. Each lands on its sample,
+        // and halfway between two deaths falls halfway between their samples.
+        let deaths = [162, 305, 499, 782, 877, 990, 1137, 1213, 1308, 1366];
+        let drops = [163, 308, 506, 795, 890, 1005, 1160, 1238, 1335, 1393];
+        let c = Clock::new(&path_dying_at(1431, &drops), &deaths, 1403);
+        assert_eq!(deaths.map(|t| c.sample(t, 1431)), drops.map(Some));
+        assert_eq!(c.sample(1250, 1431), Some(1276));
+        // Starting late and stopping early: seconds off the path have no sample.
         let late = path_dying_at(1746, &[256, 1415]);
         let c = Clock::new(&late, &[340, 1499], 2330);
         assert_eq!((c.sample(340, 1746), c.sample(10, 1746)), (Some(256), None));
         let early = path_dying_at(917, &[300]);
         let c = Clock::new(&early, &[299], 1635);
         assert_eq!((c.sample(299, 917), c.sample(1200, 917)), (Some(300), None));
+        // A drop to 0 that is no death (seen in real paths) doesn't shift the pairing.
+        let extra_drop = path_dying_at(1404, &[50, 163, 783]);
+        let c = Clock::new(&extra_drop, &[162, 782], 1403);
+        assert_eq!(
+            (c.sample(162, 1404), c.sample(782, 1404)),
+            (Some(163), Some(783))
+        );
         // Without deaths the path is spread over the match.
         let c = Clock::new(&path_dying_at(2531, &[]), &[], 2530);
         assert_eq!(c.sample(1500, 2531), Some(1500));
