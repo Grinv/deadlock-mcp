@@ -18,8 +18,8 @@ use crate::domain::terms::{game_mode_name, gold_source_name, match_mode_name, te
 use crate::http::Source;
 use crate::problem::{Kind, Problem, Result};
 use crate::sources::api;
-use crate::tools::answer_sources;
 use crate::tools::player::steam_names;
+use crate::tools::{answer_sources, round};
 
 const TEAMS: [ECitadelLobbyTeam; 2] = [
     ECitadelLobbyTeam::KECitadelLobbyTeamTeam0,
@@ -61,10 +61,13 @@ fn result_of(info: &MatchInfo, p: &Players) -> PlayerResult {
     )
 }
 
+/// `m:ss` of a game time the game writes as 0 when the thing never happened.
+fn happened_at(secs: u32) -> Option<String> {
+    (secs > 0).then(|| mmss(u64::from(secs)))
+}
+
 fn left_at(p: &Players) -> Option<String> {
-    Some(p.abandon_match_time_s())
-        .filter(|&s| s > 0)
-        .map(|s| mmss(u64::from(s)))
+    happened_at(p.abandon_match_time_s())
 }
 
 fn find_player(info: &MatchInfo, match_id: u64, account_id: u32) -> Result<&Players> {
@@ -130,11 +133,7 @@ pub fn summary(match_id: u64) -> Result<Summary> {
     let (info, source) = load(match_id)?;
     let ids: Vec<u32> = info.players.iter().map(Players::account_id).collect();
     let (names, names_source) = steam_names(&ids);
-    let sources = [Some(source), names_source]
-        .into_iter()
-        .flatten()
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(std::iter::once(source).chain(names_source), &cat);
     Ok(summary_from(&cat, match_id, &info, &names, sources))
 }
 
@@ -317,9 +316,7 @@ fn deaths(cat: &Catalog, info: &MatchInfo, p: &Players) -> Vec<Death> {
             killer: d
                 .killer_player_slot
                 .and_then(|s| slot_hero.get(&s).cloned()),
-            time_to_kill_s: d
-                .time_to_kill_s
-                .map(|t| (f64::from(t) * 10.0).round() / 10.0),
+            time_to_kill_s: d.time_to_kill_s.map(|t| round(f64::from(t), 1)),
             position: position(d.death_pos.as_ref()),
             near: d
                 .death_pos
@@ -376,9 +373,7 @@ fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
                 slot: item.slot,
                 tier: item.tier,
                 bought_at: mmss(u64::from(i.game_time_s())),
-                sold_at: Some(i.sold_time_s())
-                    .filter(|&s| s > 0)
-                    .map(|s| mmss(u64::from(s))),
+                sold_at: happened_at(i.sold_time_s()),
             })
         })
         .collect()
@@ -387,7 +382,7 @@ fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
 pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
     let cat = catalog()?;
     let (info, source) = load(match_id)?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     player_from(&cat, match_id, account_id, &info, sources)
 }
 
@@ -516,7 +511,7 @@ fn net_worth_at(p: &Players, t: u32) -> u32 {
 pub fn lanes(match_id: u64) -> Result<MatchLanes> {
     let cat: std::sync::Arc<Catalog> = catalog()?;
     let (info, source) = load(match_id)?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(lanes_from(&cat, match_id, &info, sources))
 }
 
@@ -637,6 +632,12 @@ mod tests {
             .iter_mut()
             .find(|p| p.account_id() == account_id)
             .unwrap()
+    }
+
+    #[test]
+    fn zero_game_time_means_never() {
+        assert_eq!(happened_at(0), None);
+        assert_eq!(happened_at(65).as_deref(), Some("1:05"));
     }
 
     #[test]

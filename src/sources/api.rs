@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::contracts::{api, valve};
-use crate::http::{Fresh, Source, get_json};
+use crate::http::{Fresh, Source, get_json, id_list};
 use crate::problem::Result;
 
 const API: &str = "https://api.deadlock-api.com";
@@ -91,9 +91,11 @@ pub fn rank(account_id: u32) -> Result<(api::RankResponse, Source)> {
 
 /// Steam profiles (name, profile URL) of up to 1000 accounts.
 pub fn steam_profiles(account_ids: &[u32]) -> Result<(Vec<api::SteamProfile>, Source)> {
-    let ids: Vec<String> = account_ids.iter().map(u32::to_string).collect();
     get_json(
-        &format!("{API}/v1/players/steam?account_ids={}", ids.join(",")),
+        &format!(
+            "{API}/v1/players/steam?account_ids={}",
+            id_list(account_ids)
+        ),
         Fresh::For(Duration::from_secs(24 * HOUR)),
     )
 }
@@ -116,7 +118,7 @@ const ANALYTICS: Fresh = Fresh::For(Duration::from_secs(HOUR));
 /// Per-hero stats of one player; `filters` is `&key=value...` (time range).
 pub fn player_hero_stats(account_id: u32, filters: &str) -> Result<(Vec<api::HeroStats>, Source)> {
     get_json(
-        &format!("{API}/v1/players/hero-stats?account_ids={account_id}{filters}"),
+        &format!("{API}/v1/players/hero-stats?game_mode=normal&account_ids={account_id}{filters}"),
         PLAYER,
     )
 }
@@ -192,7 +194,9 @@ pub fn ability_order_stats(
     filters: &str,
 ) -> Result<(Vec<api::AnalyticsAbilityOrderStats>, Source)> {
     get_json(
-        &format!("{API}/v1/analytics/ability-order-stats?hero_id={hero_id}{filters}"),
+        &format!(
+            "{API}/v1/analytics/ability-order-stats?game_mode=normal&hero_id={hero_id}{filters}"
+        ),
         ANALYTICS,
     )
 }

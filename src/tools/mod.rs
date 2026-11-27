@@ -7,8 +7,11 @@ pub mod player;
 
 use std::fmt::Write as _;
 
+pub use crate::domain::id32;
+
 use crate::domain::assets::Catalog;
 use crate::http::Source;
+use crate::problem::Result;
 
 /// Time and rank filters of the stats tools, as the API's query parameters.
 #[derive(Default)]
@@ -58,11 +61,19 @@ pub fn round(x: f64, places: i32) -> f64 {
     (x * f).round() / f
 }
 
-/// The sources of an answer built with the catalog: `source` and the catalog's degraded ones.
-pub fn answer_sources(source: Source, cat: &Catalog) -> Vec<Source> {
-    std::iter::once(source)
-        .chain(cat.degraded_sources())
-        .collect()
+/// `&hero_ids=<id>` for an optional hero, and the hero's name for the answer.
+pub fn hero_filter(cat: &Catalog, hero: Option<&str>) -> Result<(String, Option<String>)> {
+    let id = hero.map(|h| cat.find_hero(h)).transpose()?;
+    Ok((
+        id.map_or_default(|h| format!("&hero_ids={h}")),
+        id.map(|h| cat.hero(h)),
+    ))
+}
+
+/// The sources of an answer built with the catalog: its own, in order, then the catalog's degraded
+/// ones.
+pub fn answer_sources(own: impl IntoIterator<Item = Source>, cat: &Catalog) -> Vec<Source> {
+    own.into_iter().chain(cat.degraded_sources()).collect()
 }
 
 /// `total / matches` rounded to 2 places; 0 without matches.
@@ -75,11 +86,6 @@ pub fn per(total: i64, matches: i64) -> f64 {
     }
 }
 
-/// An API id as the catalog's `u32`; ids out of range become 0, which names no hero or item.
-pub fn id32(id: i64) -> u32 {
-    u32::try_from(id).unwrap_or_default()
-}
-
 /// `count` as a `usize` for `take`.
 pub fn take(count: u32) -> usize {
     usize::try_from(count).unwrap_or(usize::MAX)
@@ -89,7 +95,8 @@ pub fn take(count: u32) -> usize {
 mod tests {
     use super::*;
 
-    /// An answer lists its own source first, then only the catalog's stale or failed ones.
+    /// An answer lists its own sources first, in order, then only the catalog's stale or failed
+    /// ones.
     #[test]
     fn answer_sources_add_the_degraded_catalog_parts() {
         let source = |url: &str, stale| Source {
@@ -108,7 +115,8 @@ mod tests {
             source("items", true),
             failed,
         ]);
-        let urls: Vec<(String, bool, bool)> = answer_sources(source("own", false), &cat)
+        let own = [source("own", false), source("names", true)];
+        let urls: Vec<(String, bool, bool)> = answer_sources(own, &cat)
             .into_iter()
             .map(|s| (s.url, s.stale, s.error.is_some()))
             .collect();
@@ -116,10 +124,23 @@ mod tests {
             urls,
             [
                 ("own".to_owned(), false, false),
+                ("names".to_owned(), true, false),
                 ("items".to_owned(), true, false),
                 ("map".to_owned(), false, true),
             ]
         );
+    }
+
+    #[test]
+    fn hero_filter_names_the_hero() {
+        let cat = Catalog::test(&[(1, "Infernus")]);
+        let found = |hero| hero_filter(&cat, hero).map_err(|p| p.message());
+        assert_eq!(
+            found(Some("inf")),
+            Ok(("&hero_ids=1".to_owned(), Some("Infernus".to_owned())))
+        );
+        assert_eq!(found(None), Ok((String::new(), None)));
+        assert!(found(Some("nobody")).is_err());
     }
 
     #[test]

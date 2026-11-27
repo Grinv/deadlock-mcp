@@ -364,7 +364,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<game::PatchFeed>, CallToolResult> {
         let a: PatchesArgs = parse(raw)?;
-        run(move || game::patches(a.link.as_deref(), crate::tools::take(a.limit))).await
+        run(move || game::patches(a.link.as_deref(), a.limit)).await
     }
 
     /// The top players of a region's ranked leaderboard, optionally for one hero.

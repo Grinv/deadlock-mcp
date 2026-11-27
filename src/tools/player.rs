@@ -2,7 +2,6 @@
 //! `player_mates`, `player_enemies`, `player_deaths_map` and `ingest_status`.
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -13,10 +12,10 @@ use crate::contracts::api::{
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{date, mmss, plain};
 use crate::domain::outcome::{PlayerResult, player_result};
-use crate::http::Source;
+use crate::http::{Source, optional};
 use crate::problem::{Problem, Result};
 use crate::sources::api;
-use crate::tools::{Filters, answer_sources, id32, per, round, take, win_rate};
+use crate::tools::{Filters, answer_sources, hero_filter, id32, per, round, take, win_rate};
 
 const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 
@@ -150,7 +149,7 @@ pub struct Overview {
     pub sources: Vec<Source>,
 }
 
-pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
+pub fn overview(account_id: u32, recent: u32) -> Result<Overview> {
     let cat = catalog()?;
     let (history, history_source) = api::match_history(account_id)?;
     if history.is_empty() {
@@ -161,11 +160,12 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
     let (rank, rank_source) = api::rank(account_id)?;
     let (mut names, profile_source) = steam_names(&[account_id]);
     let steam_name = names.remove(&account_id);
-    let sources = [history_source, rank_source]
-        .into_iter()
-        .chain(profile_source)
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(
+        [history_source, rank_source]
+            .into_iter()
+            .chain(profile_source),
+        &cat,
+    );
     Ok(overview_from(
         &cat, account_id, recent, &history, &rank, steam_name, sources,
     ))
@@ -174,7 +174,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
 fn overview_from(
     cat: &Catalog,
     account_id: u32,
-    recent: usize,
+    recent: u32,
     history: &[PlayerMatchHistoryEntry],
     rank: &RankResponse,
     steam_name: Option<String>,
@@ -222,7 +222,7 @@ fn overview_from(
             .collect(),
         recent: history
             .iter()
-            .take(recent)
+            .take(take(recent))
             .map(|m| RecentMatch {
                 match_id: m.match_id,
                 date: date(m.start_time),
@@ -239,25 +239,29 @@ fn overview_from(
     }
 }
 
-/// Steam names of `ids` in one request. Names only decorate an answer, so a failure goes into the
-/// answer's sources and the answer goes on without them.
+/// `ids` sorted, each once.
+fn distinct(ids: &[u32]) -> Vec<u32> {
+    let mut ids = ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// Steam names of `ids` (each asked once) in one request. Names only decorate an answer, so a
+/// failure goes into the answer's sources and the answer goes on without them.
 pub fn steam_names(ids: &[u32]) -> (HashMap<u32, String>, Option<Source>) {
     if ids.is_empty() {
         return (HashMap::new(), None);
     }
-    match api::steam_profiles(ids) {
-        Ok((profiles, source)) => (
-            profiles
-                .into_iter()
-                .filter_map(|p| Some((u32::try_from(p.account_id).ok()?, plain(&p.personaname))))
-                .collect(),
-            Some(source),
-        ),
-        Err(problem) => {
-            eprintln!("deadlock-mcp: steam names: {}", problem.message());
-            (HashMap::new(), Some(Source::failed(&problem)))
-        }
-    }
+    let fetched = api::steam_profiles(&distinct(ids)).map(|(profiles, source)| {
+        let names = profiles
+            .into_iter()
+            .filter_map(|p| Some((u32::try_from(p.account_id).ok()?, plain(&p.personaname))))
+            .collect();
+        (names, source)
+    });
+    let (names, source) = optional("steam names", fetched);
+    (names, Some(source))
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -292,17 +296,13 @@ pub struct PlayerHeroes {
 
 pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHeroes> {
     let cat = catalog()?;
-    let filters = Filters {
-        days,
-        ..Filters::default()
-    };
-    let (stats, source) = api::player_hero_stats(account_id, &filters.query())?;
+    let (stats, source) = api::player_hero_stats(account_id, &days_query(days))?;
     if stats.is_empty() {
         return Err(Problem::not_found(format!(
             "the Deadlock API has no matches for account {account_id} in that time; check the id with player_search"
         )));
     }
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(heroes_from(&cat, account_id, limit, stats, sources))
 }
 
@@ -373,12 +373,17 @@ fn partners(
     .collect()
 }
 
-fn player_filters(days: Option<u32>, min_matches: u32) -> String {
-    let filters = Filters {
+/// The time range of a player's stats as query parameters.
+fn days_query(days: Option<u32>) -> String {
+    Filters {
         days,
         ..Filters::default()
-    };
-    format!("{}&min_matches_played={min_matches}", filters.query())
+    }
+    .query()
+}
+
+fn player_filters(days: Option<u32>, min_matches: u32) -> String {
+    format!("{}&min_matches_played={min_matches}", days_query(days))
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -442,9 +447,7 @@ pub fn enemies(
     let (rows, source) = api::enemy_stats(account_id, &player_filters(days, min_matches))?;
     let row = |e: &&crate::contracts::api::EnemyStats| (id32(e.enemy_id), e.matches_played, e.wins);
     let (met, lost) = met_and_lost(&rows, limit);
-    let mut ids: Vec<u32> = met.iter().chain(&lost).map(|e| id32(e.enemy_id)).collect();
-    ids.sort_unstable();
-    ids.dedup();
+    let ids: Vec<u32> = met.iter().chain(&lost).map(|e| id32(e.enemy_id)).collect();
     let (names, names_source) = steam_names(&ids);
     Ok(Enemies {
         account_id,
@@ -510,26 +513,19 @@ pub fn deaths_map(
     limit: u32,
 ) -> Result<DeathsMap> {
     let cat = catalog()?;
-    let hero_id = hero.map(|h| cat.find_hero(h)).transpose()?;
-    let filters = Filters {
-        days,
-        ..Filters::default()
-    };
-    let mut query = format!("&account_ids={account_id}{}", filters.query());
-    if let Some(h) = hero_id {
-        let _ = write!(query, "&hero_ids={h}");
-    }
+    let (hero_query, hero) = hero_filter(&cat, hero)?;
+    let query = format!("&account_ids={account_id}{}{hero_query}", days_query(days));
     let (cells, source) = api::kill_death_stats(&query)?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(deaths_map_from(
-        &cat, account_id, hero_id, limit, &cells, sources,
+        &cat, account_id, hero, limit, &cells, sources,
     ))
 }
 
 fn deaths_map_from(
     cat: &Catalog,
     account_id: u32,
-    hero_id: Option<u32>,
+    hero: Option<String>,
     limit: u32,
     cells: &[KillDeathStats],
     sources: Vec<Source>,
@@ -569,7 +565,7 @@ fn deaths_map_from(
     };
     DeathsMap {
         account_id,
-        hero: hero_id.map(|h| cat.hero(h)),
+        hero,
         deaths: cells.iter().map(|c| c.deaths).sum(),
         kills: cells.iter().map(|c| c.kills).sum(),
         death_hotspots: spots(true),
@@ -723,6 +719,11 @@ mod tests {
     }
 
     #[test]
+    fn steam_names_ask_each_account_once() {
+        assert_eq!(distinct(&[7, 3, 7, 1, 3]), [1, 3, 7]);
+    }
+
+    #[test]
     fn heroes_most_played_first() {
         let stats: Vec<HeroStats> = serde_json::from_str(include_str!(
             "../../contracts/fixtures/player_hero_stats.json"
@@ -786,9 +787,9 @@ mod tests {
         cells.push(cell(-700, -3500, 2));
         cells.push(cell(5000, -100, 1));
         let m = deaths_map_from(
-            &Catalog::test(&[(1, "Infernus")]),
+            &Catalog::test(&[]),
             1,
-            Some(1),
+            Some("Infernus".to_owned()),
             2,
             &cells,
             Vec::new(),

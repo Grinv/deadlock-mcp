@@ -22,7 +22,7 @@ use crate::http::Source;
 use crate::problem::Result;
 use crate::sources::api;
 use crate::tools::player::steam_names;
-use crate::tools::{Filters, answer_sources, id32, per, round, take, win_rate};
+use crate::tools::{Filters, answer_sources, hero_filter, id32, per, round, take, win_rate};
 
 /// Win rate of a row for sorting; rows without matches sort last.
 fn rate(wins: i64, matches: i64) -> f64 {
@@ -78,7 +78,7 @@ pub fn hero_stats(
 ) -> Result<HeroStats> {
     let cat = catalog()?;
     let (rows, source) = api::hero_stats(&filters.query())?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(hero_stats_from(
         &cat,
         min_matches,
@@ -171,11 +171,10 @@ pub fn hero_items(
         filters.query()
     );
     if !enemies.is_empty() {
-        let ids: Vec<String> = enemies.iter().map(u32::to_string).collect();
-        let _ = write!(query, "&enemy_hero_ids={}", ids.join(","));
+        let _ = write!(query, "&enemy_hero_ids={}", crate::http::id_list(&enemies));
     }
     let (rows, source) = api::item_stats(&query)?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(hero_items_from(
         &cat, hero_id, &enemies, limit, &rows, sources,
     ))
@@ -294,7 +293,7 @@ pub fn hero_counters(
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let (rows, source) = api::hero_counter_stats(&pair_query(filters, min_matches, same_lane))?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(hero_counters_from(
         &cat, hero_id, same_lane, limit, &rows, sources,
     ))
@@ -345,7 +344,7 @@ pub fn hero_synergies(
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let (rows, source) = api::hero_synergy_stats(&pair_query(filters, min_matches, same_lane))?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(hero_synergies_from(
         &cat, hero_id, same_lane, limit, &rows, sources,
     ))
@@ -413,7 +412,7 @@ pub fn ability_order(
     let hero_id = cat.find_hero(hero)?;
     let query = format!("&min_matches={min_matches}{}", filters.query());
     let (rows, source) = api::ability_order_stats(hero_id, &query)?;
-    let sources = answer_sources(source, &cat);
+    let sources = answer_sources([source], &cat);
     Ok(ability_order_from(&cat, hero_id, limit, rows, sources))
 }
 
@@ -523,10 +522,7 @@ pub fn builds(
     Ok(HeroBuilds {
         hero: cat.hero(hero_id),
         builds,
-        sources: std::iter::once(source)
-            .chain(names_source)
-            .chain(cat.degraded_sources())
-            .collect(),
+        sources: answer_sources(std::iter::once(source).chain(names_source), &cat),
     })
 }
 
@@ -567,17 +563,8 @@ pub fn leaderboard(region: Region, hero: Option<&str>, limit: u32) -> Result<Lea
                 top_heroes: e.top_hero_ids.iter().map(|&h| cat.hero(id32(h))).collect(),
             })
             .collect(),
-        sources: answer_sources(source, &cat),
+        sources: answer_sources([source], &cat),
     })
-}
-
-/// `&hero_ids=<id>` for an optional hero, and the hero's name for the answer.
-fn hero_filter(cat: &Catalog, hero: Option<&str>) -> Result<(String, Option<String>)> {
-    let id = hero.map(|h| cat.find_hero(h)).transpose()?;
-    Ok((
-        id.map_or_default(|h| format!("&hero_ids={h}")),
-        id.map(|h| cat.hero(h)),
-    ))
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -627,7 +614,7 @@ pub fn performance_curve(hero: Option<&str>, filters: &Filters) -> Result<Perfor
     Ok(performance_curve_from(
         hero,
         &rows,
-        answer_sources(source, &cat),
+        answer_sources([source], &cat),
     ))
 }
 
@@ -822,7 +809,7 @@ pub fn stat_percentiles(
     Ok(StatPercentiles {
         hero,
         metrics,
-        sources: answer_sources(source, &cat),
+        sources: answer_sources([source], &cat),
     })
 }
 

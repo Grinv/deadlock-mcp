@@ -24,13 +24,9 @@ pub struct PlayerOverviewArgs {
     #[garde(range(min = 1))]
     pub account_id: u32,
     /// How many recent matches to list.
-    #[serde(default = "default_recent")]
+    #[serde(default = "default_ten")]
     #[garde(range(min = 1, max = 50))]
     pub recent: u32,
-}
-
-const fn default_recent() -> u32 {
-    10
 }
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -148,8 +144,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<player::Overview>, CallToolResult> {
         let args: PlayerOverviewArgs = parse(raw)?;
-        let recent = usize::try_from(args.recent).unwrap_or(usize::MAX);
-        run(move || player::overview(args.account_id, recent)).await
+        run(move || player::overview(args.account_id, args.recent)).await
     }
 
     /// A player's stats per hero: matches, win rate, K/D/A per match, souls and damage per minute.

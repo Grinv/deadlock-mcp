@@ -54,9 +54,9 @@ Data flows down this list: a module uses only the ones above it.
   only the doc comment: rmcp parses them with plain serde, never runs `garde`, and lists each
   argument with just its name, description and whether it is required, so a limit would be enforced
   without being shown.
-- Every answer has `sources`, plus `cat.degraded_sources()` when it used the catalog. Text written by
-  people (Steam names, the wiki) goes through `domain::format::plain`. Every win rate carries its
-  match count.
+- Every answer has `sources`, plus the catalog's degraded ones (`tools::answer_sources`) when it
+  used the catalog. Text written by people (Steam names, the wiki) goes through
+  `domain::format::plain`. Every win rate carries its match count.
 - Errors are `Problem`s of an existing kind. A new kind needs a section in `docs/errors.md`, and a
   test checks that.
 - The server reads public data over the network only, never local game or Steam files. Keep real

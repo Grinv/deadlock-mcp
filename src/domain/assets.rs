@@ -13,7 +13,7 @@ use crate::contracts::api;
 use crate::domain::format::strip_tags;
 use crate::domain::items::{Item, ItemKind};
 use crate::domain::map;
-use crate::http::Source;
+use crate::http::{Source, optional};
 use crate::problem::{Problem, Result};
 use crate::sources::api as source;
 
@@ -253,6 +253,12 @@ pub fn catalog() -> Result<Arc<Catalog>> {
     Ok(catalog)
 }
 
+fn accolades_by_id(list: Vec<api::Accolade>) -> HashMap<u32, api::Accolade> {
+    list.into_iter()
+        .filter_map(|a| Some((u32::try_from(a.id).ok()?, a)))
+        .collect()
+}
+
 fn load(version: u32) -> Result<Catalog> {
     let mut sources = Vec::new();
     let (heroes, s) = source::heroes(version)?;
@@ -306,31 +312,17 @@ fn load(version: u32) -> Result<Catalog> {
         })
         .collect();
     // Place names are a nicety: without the map, positions stay bare.
-    let landmarks = match source::map(version) {
-        Ok((data, s)) => {
-            sources.push(s);
-            map::landmarks(&data, &lanes)
-        }
-        Err(problem) => {
-            eprintln!("deadlock-mcp: map: {}", problem.message());
-            sources.push(Source::failed(&problem));
-            Vec::new()
-        }
-    };
+    let (landmarks, s) = optional(
+        "map",
+        source::map(version).map(|(data, s)| (map::landmarks(&data, &lanes), s)),
+    );
+    sources.push(s);
     // Award names are a nicety too: without them a match still reads.
-    let accolades = match source::accolades(version) {
-        Ok((list, s)) => {
-            sources.push(s);
-            list.into_iter()
-                .filter_map(|a| Some((u32::try_from(a.id).ok()?, a)))
-                .collect()
-        }
-        Err(problem) => {
-            eprintln!("deadlock-mcp: accolades: {}", problem.message());
-            sources.push(Source::failed(&problem));
-            HashMap::new()
-        }
-    };
+    let (accolades, s) = optional(
+        "accolades",
+        source::accolades(version).map(|(list, s)| (accolades_by_id(list), s)),
+    );
+    sources.push(s);
     Ok(Catalog {
         version,
         heroes,
@@ -399,10 +391,7 @@ mod tests {
         }
 
         pub fn with_accolades(mut self, accolades: Vec<api::Accolade>) -> Self {
-            self.accolades = accolades
-                .into_iter()
-                .filter_map(|a| Some((u32::try_from(a.id).ok()?, a)))
-                .collect();
+            self.accolades = accolades_by_id(accolades);
             self
         }
     }

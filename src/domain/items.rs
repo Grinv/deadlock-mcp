@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use crate::contracts::api;
 use crate::domain::format::{clip, strip_tags};
+use crate::domain::id32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -95,7 +96,6 @@ fn properties<P>(
 
 impl From<api::Item> for Item {
     fn from(item: api::Item) -> Self {
-        let id32 = |id: i64| u32::try_from(id).unwrap_or_default();
         match item {
             api::Item::Ability {
                 id,

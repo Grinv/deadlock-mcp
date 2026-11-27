@@ -11,6 +11,7 @@ use crate::domain::items::{self, Item, ItemKind};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::sources::wiki::{self, page_url};
+use crate::tools::take;
 
 const LIMIT: usize = 15;
 
@@ -271,14 +272,14 @@ fn fields(f: &FeedItem) -> (&'static str, &String, &String, &String, &String) {
     }
 }
 
-pub fn patches(link: Option<&str>, limit: usize) -> Result<PatchFeed> {
+pub fn patches(link: Option<&str>, limit: u32) -> Result<PatchFeed> {
     let (feed, source) = crate::sources::api::patches()?;
     patches_from(link, limit, &feed, vec![source])
 }
 
 fn patches_from(
     link: Option<&str>,
-    limit: usize,
+    limit: u32,
     feed: &[FeedItem],
     sources: Vec<Source>,
 ) -> Result<PatchFeed> {
@@ -308,7 +309,7 @@ fn patches_from(
         patches: feed
             .iter()
             .map(fields)
-            .take(limit)
+            .take(take(limit))
             .map(|(source, title, date, link, _)| Patch {
                 title: plain(title.trim()),
                 date: day(date),
@@ -391,11 +392,11 @@ pub fn page(title: &str, section: Option<&str>) -> Result<Page> {
         })?,
         None => full.to_owned(),
     };
-    let truncated = text.chars().count() > MAX_PAGE;
+    let (text, truncated) = bounded(&text, MAX_PAGE);
     Ok(Page {
         url: page_url(&real_title),
         title: real_title,
-        text: text.chars().take(MAX_PAGE).collect(),
+        text,
         sections,
         truncated,
         license: LICENSE,

@@ -85,6 +85,18 @@ impl Source {
     }
 }
 
+/// The value of a part an answer can go without (`part` names it in the log). When its request
+/// failed, the failure is logged and the answer gets an empty value and a failed source.
+pub fn optional<T: Default>(
+    part: &str,
+    fetched: crate::problem::Result<(T, Source)>,
+) -> (T, Source) {
+    fetched.unwrap_or_else(|problem| {
+        eprintln!("{}: {part}: {}", env!("CARGO_PKG_NAME"), problem.message());
+        (T::default(), Source::failed(&problem))
+    })
+}
+
 fn host(url: &str) -> &str {
     url.split("://")
         .nth(1)
@@ -135,6 +147,11 @@ pub fn encode(s: &str) -> String {
         .collect()
 }
 
+/// Ids as one comma-separated query value, e.g. `1,22`.
+pub fn id_list(ids: &[u32]) -> String {
+    ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+}
+
 enum Attempt {
     Body {
         etag: Option<String>,
@@ -162,6 +179,14 @@ fn upstream_detail(body: &[u8]) -> String {
     detail.chars().take(500).collect()
 }
 
+/// A network error: worth one retry.
+fn network_error(url: &str, e: impl std::fmt::Display) -> Attempt {
+    Attempt::Failed {
+        problem: Problem::new(Kind::Unreachable, format!("{}: {e}", host(url))).with_instance(url),
+        retry_in: Some(Duration::from_secs(1)),
+    }
+}
+
 fn attempt(url: &str, etag: Option<&str>) -> Attempt {
     pace(url);
     let mut req = ureq::get(url).header("User-Agent", USER_AGENT);
@@ -176,14 +201,7 @@ fn attempt(url: &str, etag: Option<&str>) -> Attempt {
         .call()
     {
         Ok(r) => r,
-        Err(e) => {
-            let problem =
-                Problem::new(Kind::Unreachable, format!("{}: {e}", host(url))).with_instance(url);
-            return Attempt::Failed {
-                problem,
-                retry_in: Some(Duration::from_secs(1)),
-            };
-        }
+        Err(e) => return network_error(url, e),
     };
     let status = resp.status().as_u16();
     if status == 304 {
@@ -206,12 +224,7 @@ fn attempt(url: &str, etag: Option<&str>) -> Attempt {
         .take(MAX_BODY + 1)
         .read_to_end(&mut body)
     {
-        let problem =
-            Problem::new(Kind::Unreachable, format!("{}: {e}", host(url))).with_instance(url);
-        return Attempt::Failed {
-            problem,
-            retry_in: Some(Duration::from_secs(1)),
-        };
+        return network_error(url, e);
     }
     if body.len() as u64 > MAX_BODY {
         return Attempt::Failed {
@@ -234,21 +247,19 @@ fn attempt(url: &str, etag: Option<&str>) -> Attempt {
 
 /// What a non-2xx answer means for the caller, and whether one retry may help.
 fn failure(url: &str, status: u16, retry_after: Option<u64>, body: &[u8]) -> Attempt {
-    let detail = upstream_detail(body);
-    let problem = |kind| {
-        Problem::new(kind, detail.clone())
+    let problem = |kind, detail: String| {
+        Problem::new(kind, detail)
             .with_status(status)
             .with_instance(url)
     };
+    let detail = upstream_detail(body);
     match status {
         429 | 503 if retry_after.is_some() || status == 429 => {
             let wait = retry_after.map_or_else(|| "later".to_owned(), |s| format!("in {s} s"));
-            let mut p = Problem::new(
+            let mut p = problem(
                 Kind::RateLimited,
                 format!("{} asked to slow down; try again {wait}", host(url)),
-            )
-            .with_status(status)
-            .with_instance(url);
+            );
             if let Some(s) = retry_after {
                 p = p.with("retry_after_s", s);
             }
@@ -260,15 +271,15 @@ fn failure(url: &str, status: u16, retry_after: Option<u64>, body: &[u8]) -> Att
             }
         }
         404 => Attempt::Failed {
-            problem: problem(Kind::NotFound),
+            problem: problem(Kind::NotFound, detail),
             retry_in: None,
         },
         500..=599 => Attempt::Failed {
-            problem: problem(Kind::Upstream),
+            problem: problem(Kind::Upstream, detail),
             retry_in: Some(Duration::from_secs(1)),
         },
         _ => Attempt::Failed {
-            problem: problem(Kind::Upstream),
+            problem: problem(Kind::Upstream, detail),
             retry_in: None,
         },
     }
@@ -483,10 +494,97 @@ mod tests {
         assert!(other.elapsed() < MIN_GAP, "{:?}", other.elapsed());
     }
 
+    /// What each failed answer becomes, and which ones are retried once.
+    #[test]
+    fn failures_by_status() {
+        let url = "https://api.test/x";
+        let failed = |a: Attempt| match a {
+            Attempt::Failed { problem, retry_in } => (
+                problem.kind,
+                problem.message(),
+                problem.status,
+                problem.instance,
+                problem.extensions.get("retry_after_s").cloned(),
+                retry_in,
+            ),
+            Attempt::Body { .. } | Attempt::NotModified => panic!("not a failure"),
+        };
+        let at = Some(url.to_owned());
+        let body = br#"{"error":"gone"}"#;
+        assert_eq!(
+            failed(failure(url, 429, None, body)),
+            (
+                Kind::RateLimited,
+                "Rate limited: api.test asked to slow down; try again later".to_owned(),
+                Some(429),
+                at.clone(),
+                None,
+                None
+            )
+        );
+        let (kind, _, _, _, after, retry) = failed(failure(url, 503, Some(5), body));
+        assert_eq!(
+            (kind, after, retry),
+            (
+                Kind::RateLimited,
+                Some(5.into()),
+                Some(Duration::from_secs(5))
+            )
+        );
+        let (kind, message, status, instance, _, retry) = failed(failure(url, 404, None, body));
+        assert_eq!(
+            (kind, message.ends_with(": gone"), status, instance, retry),
+            (Kind::NotFound, true, Some(404), at.clone(), None)
+        );
+        let (kind, _, _, _, _, retry) = failed(failure(url, 503, None, body));
+        assert_eq!(
+            (kind, retry),
+            (Kind::Upstream, Some(Duration::from_secs(1)))
+        );
+        let (kind, _, _, _, _, retry) = failed(failure(url, 400, None, body));
+        assert_eq!((kind, retry), (Kind::Upstream, None));
+        let (kind, message, status, instance, _, retry) = failed(network_error(url, "timed out"));
+        assert_eq!(
+            (
+                kind,
+                message.ends_with(": api.test: timed out"),
+                status,
+                instance,
+                retry
+            ),
+            (
+                Kind::Unreachable,
+                true,
+                None,
+                at,
+                Some(Duration::from_secs(1))
+            )
+        );
+    }
+
+    /// A failed optional part leaves an empty value and a failed source; a fetched one passes.
+    #[test]
+    fn optional_parts_fail_softly() {
+        let problem = Problem::new(Kind::Unreachable, "down").with_instance("https://api.test/m");
+        let (value, source): (Vec<u8>, Source) = optional("map", Err(problem));
+        assert_eq!(value, Vec::<u8>::new());
+        assert_eq!(
+            (source.url.as_str(), source.error.as_deref()),
+            (
+                "https://api.test/m",
+                Some("The data source could not be reached: down")
+            )
+        );
+        let ok = Source::failed(&Problem::not_found("x"));
+        let (value, _) = optional("map", Ok((vec![1_u8], ok)));
+        assert_eq!(value, [1]);
+    }
+
     #[test]
     fn stable_keys_and_encoding() {
         assert_eq!(key("a"), "af63dc4c8601ec8c");
         assert_eq!(encode("Sinner's Sacrifice"), "Sinner%27s%20Sacrifice");
+        assert_eq!(id_list(&[1, 22]), "1,22");
         assert_eq!(
             host("https://api.deadlock-api.com/v1/x"),
             "api.deadlock-api.com"
