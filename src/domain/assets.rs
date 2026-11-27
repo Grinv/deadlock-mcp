@@ -352,29 +352,48 @@ fn load(version: u32) -> Result<Catalog> {
 mod tests {
     use super::*;
 
-    fn catalog(names: &[(u32, &str)]) -> Catalog {
-        Catalog {
-            version: 1,
-            heroes: names.iter().map(|&(id, n)| (id, n.to_owned())).collect(),
-            hero_info: names
-                .iter()
-                .map(|&(id, _)| {
-                    let info = HeroInfo {
-                        role: None,
-                        playstyle: None,
-                        lore: None,
-                        selectable: id != 13,
-                    };
-                    (id, info)
-                })
-                .collect(),
-            items: HashMap::new(),
-            ranks: HashMap::new(),
-            lanes: Vec::new(),
-            landmarks: Vec::new(),
-            accolades: HashMap::new(),
-            sources: Vec::new(),
-            retry_at: None,
+    /// Catalogs for tests of the tools, which can't fetch one.
+    impl Catalog {
+        /// The heroes `names`, all playable but id 13; nothing else until the `with_` calls.
+        pub fn test(names: &[(u32, &str)]) -> Self {
+            Catalog {
+                version: 1,
+                heroes: names.iter().map(|&(id, n)| (id, n.to_owned())).collect(),
+                hero_info: names
+                    .iter()
+                    .map(|&(id, _)| {
+                        let info = HeroInfo {
+                            role: None,
+                            playstyle: None,
+                            lore: None,
+                            selectable: id != 13,
+                        };
+                        (id, info)
+                    })
+                    .collect(),
+                items: HashMap::new(),
+                ranks: HashMap::new(),
+                lanes: Vec::new(),
+                landmarks: Vec::new(),
+                accolades: HashMap::new(),
+                sources: Vec::new(),
+                retry_at: None,
+            }
+        }
+
+        /// The lanes, and the objectives of `map` named after them.
+        pub fn with_map(mut self, lanes: Vec<(u32, Lane)>, map: &api::MapData) -> Self {
+            self.landmarks = map::landmarks(map, &lanes);
+            self.lanes = lanes;
+            self
+        }
+
+        pub fn with_accolades(mut self, accolades: Vec<api::Accolade>) -> Self {
+            self.accolades = accolades
+                .into_iter()
+                .filter_map(|a| Some((u32::try_from(a.id).ok()?, a)))
+                .collect();
+            self
         }
     }
 
@@ -382,7 +401,7 @@ mod tests {
     #[test]
     fn incomplete_catalog_is_loaded_again() {
         let now = Instant::now();
-        let mut cat = catalog(&[]);
+        let mut cat = Catalog::test(&[]);
         assert!(cat.reusable(1, now));
         assert!(!cat.reusable(2, now));
         cat.retry_at = Some(now + RETRY_INCOMPLETE);
@@ -392,7 +411,7 @@ mod tests {
 
     #[test]
     fn finds_heroes_by_id_and_name() {
-        let cat = catalog(&[
+        let cat = Catalog::test(&[
             (1, "Infernus"),
             (12, "Kelvin"),
             (18, "Mo & Krill"),

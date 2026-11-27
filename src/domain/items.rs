@@ -189,6 +189,24 @@ impl From<api::Item> for Item {
 mod tests {
     use super::*;
 
+    impl Item {
+        /// An item for tests of the tools; the optional fields are empty.
+        pub fn test(id: u32, name: &str, kind: ItemKind) -> Self {
+            Self {
+                id,
+                name: name.to_owned(),
+                kind,
+                slot: None,
+                hero: None,
+                tier: None,
+                cost: None,
+                description: None,
+                upgrades: Vec::new(),
+                properties: Vec::new(),
+            }
+        }
+    }
+
     #[test]
     fn shows_only_used_properties() {
         let n = |v: f64| Some(api::StringOrNumber::Double(v));
