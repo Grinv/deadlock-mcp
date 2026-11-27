@@ -52,6 +52,21 @@ pub fn round(x: f64, places: i32) -> f64 {
     (x * f).round() / f
 }
 
+/// `total / matches` rounded to 2 places; 0 without matches.
+#[expect(clippy::cast_precision_loss, reason = "counts are far below 2^52")]
+pub fn per(total: i64, matches: i64) -> f64 {
+    if matches == 0 {
+        0.0
+    } else {
+        round(total as f64 / matches as f64, 2)
+    }
+}
+
+/// An API id as the catalog's `u32`; ids out of range become 0, which names no hero or item.
+pub fn id32(id: i64) -> u32 {
+    u32::try_from(id).unwrap_or_default()
+}
+
 /// `count` as a `usize` for `take`.
 pub fn take(count: u32) -> usize {
     usize::try_from(count).unwrap_or(usize::MAX)

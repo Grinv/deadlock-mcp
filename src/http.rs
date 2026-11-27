@@ -3,6 +3,7 @@
 //! Each entry keeps the body and its `ETag`. A stale entry is revalidated with `If-None-Match`
 //! (a 304 costs no body) and, when the request fails, served as is and marked `stale`. Errors are
 //! never cached. A 429/503 with a short `Retry-After` and a network error or 5xx are retried once.
+//! Entries unused for `MAX_UNUSED` are deleted at startup.
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
@@ -26,6 +27,10 @@ const MAX_RETRY_WAIT_S: u64 = 10;
 /// Spacing between requests to one host, at most 10 per second: under the Deadlock API's
 /// tightest documented limit (match metadata from storage, 100 per 10 s) and polite to the wiki.
 const MIN_GAP: Duration = Duration::from_millis(100);
+/// Most URLs are never asked for again once their time window or game version is past (the meta
+/// tools' start time moves every hour, each patch brings a new 6.5 MB item catalog), so without
+/// this the cache only grows.
+const MAX_UNUSED: Duration = Duration::from_hours(30 * 24);
 
 static NEXT_SLOT: Mutex<BTreeMap<String, Instant>> = Mutex::new(BTreeMap::new());
 
@@ -61,6 +66,23 @@ pub struct Source {
     pub from_cache: bool,
     /// The server could not be reached or refused, and this is an older copy.
     pub stale: bool,
+    /// The request failed and nothing was cached, so the part of the answer it gives is missing
+    /// (Steam names, place names, awards); `fetched_at` is when it was tried.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl Source {
+    /// A source whose request failed, for a part an answer can go without.
+    pub fn failed(problem: &Problem) -> Self {
+        Self {
+            url: problem.instance.clone().unwrap_or_default(),
+            fetched_at: unix_now(),
+            from_cache: false,
+            stale: false,
+            error: Some(problem.message()),
+        }
+    }
 }
 
 fn host(url: &str) -> &str {
@@ -268,6 +290,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         fetched_at,
         from_cache,
         stale,
+        error: None,
     };
 
     let still_fresh = |meta: &Meta| match fresh {
@@ -275,6 +298,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         Fresh::For(ttl) => unix_now().saturating_sub(meta.fetched_at) < ttl.as_secs(),
     };
     if let Some((meta, body)) = cached.take_if(|(meta, _)| still_fresh(meta)) {
+        touch(&[&meta_path, &body_path]);
         return Ok((body, source(meta.fetched_at, true, false)));
     }
 
@@ -307,6 +331,7 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
             Some((meta, body)) => {
                 let fetched_at = unix_now();
                 save(&meta_path, &body_path, &Meta { fetched_at, ..meta }, None);
+                touch(&[&body_path]);
                 Ok((body, source(fetched_at, true, false)))
             }
             None => Err(
@@ -315,9 +340,42 @@ pub fn get(url: &str, fresh: Fresh) -> crate::problem::Result<(Vec<u8>, Source)>
         },
         Attempt::Failed { problem, .. } if problem.kind == Kind::NotFound => Err(problem),
         Attempt::Failed { problem, .. } => match cached {
-            Some((meta, body)) => Ok((body, source(meta.fetched_at, true, true))),
+            Some((meta, body)) => {
+                touch(&[&meta_path, &body_path]);
+                Ok((body, source(meta.fetched_at, true, true)))
+            }
             None => Err(problem),
         },
+    }
+}
+
+/// Marks cache files as used now, so `prune` keeps them; a failure only lets them expire sooner.
+fn touch(paths: &[&Path]) {
+    for path in paths {
+        let _ = std::fs::File::options()
+            .write(true)
+            .open(path)
+            .and_then(|f| f.set_modified(SystemTime::now()));
+    }
+}
+
+/// Deletes the cache files not used for `MAX_UNUSED`, among them temp files a killed process left.
+pub fn prune_cache() {
+    prune(&dir(), SystemTime::now());
+}
+
+fn prune(dir: &Path, now: SystemTime) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let unused = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| now.duration_since(t).is_ok_and(|age| age > MAX_UNUSED));
+        if unused {
+            let _ = std::fs::remove_file(entry.path());
+        }
     }
 }
 
@@ -385,6 +443,29 @@ mod tests {
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prune_deletes_only_unused_files() {
+        let dir = std::env::temp_dir().join(format!("dmcp-prune-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (old, used) = (dir.join("old.body"), dir.join("used.body"));
+        write_atomic(&old, b"x").unwrap();
+        write_atomic(&used, b"x").unwrap();
+        let now = SystemTime::now();
+        let long_ago = now - MAX_UNUSED - Duration::from_secs(1);
+        for path in [&old, &used] {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(long_ago)
+                .unwrap();
+        }
+        touch(&[&used]);
+        prune(&dir, now);
+        assert!(!old.exists() && used.exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

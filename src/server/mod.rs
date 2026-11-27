@@ -30,7 +30,7 @@ Deadlock (Valve's hero shooter) statistics and game knowledge.
 - Players are identified by account id (the Steam32 id). Start with player_search when you only have a name, a SteamID64 or a profile link.
 - player_overview lists a player's recent matches with their match ids; the match_* tools take those ids.
 - A player's `result` is their own: `not_scored` when the game voided the match for them (usually a teammate left); a leaver's match is a loss even if their team won.
-- Every answer lists its `sources`; when one is `stale`, the data source failed and an older copy was used, so say so.
+- Every answer lists its `sources`; when one is `stale`, the data source failed and an older copy was used, so say so. One with an `error` failed with nothing cached, so the part it gives (Steam names, place names, awards) is missing, not empty.
 - Hero, ability and item names come from game_lookup; mechanics and explanations from wiki_search and wiki_page (cite the page URL; the text is CC BY-NC-SA 4.0).
 - A hero's story is on the wiki page \"<Hero>/Lore\" (e.g. \"Kelvin/Lore\"); the hero page itself only links to it.
 - A player's own stats: player_heroes (per hero), player_mates (who they play with), player_enemies (who they meet and lose to), \

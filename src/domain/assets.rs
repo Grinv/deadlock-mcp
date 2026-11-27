@@ -54,6 +54,10 @@ pub struct Catalog {
     retry_at: Option<Instant>,
 }
 
+fn degraded(s: &Source) -> bool {
+    s.stale || s.error.is_some()
+}
+
 /// How long an incomplete catalog is kept before the next call loads it again: long enough not to
 /// reload on every call while a source is down, short enough to recover within a session.
 const RETRY_INCOMPLETE: Duration = Duration::from_mins(5);
@@ -171,9 +175,10 @@ impl Catalog {
         )
     }
 
-    /// The catalog's sources that came from an outdated copy, for answers to list next to their own.
-    pub fn stale_sources(&self) -> impl Iterator<Item = Source> + '_ {
-        self.sources.iter().filter(|s| s.stale).cloned()
+    /// The catalog's sources that came from an outdated copy or failed, for answers to list next
+    /// to their own.
+    pub fn degraded_sources(&self) -> impl Iterator<Item = Source> + '_ {
+        self.sources.iter().filter(|s| degraded(s)).cloned()
     }
 
     /// The lanes heroes are assigned to, in the game's order.
@@ -250,7 +255,6 @@ pub fn catalog() -> Result<Arc<Catalog>> {
 
 fn load(version: u32) -> Result<Catalog> {
     let mut sources = Vec::new();
-    let mut complete = true;
     let (heroes, s) = source::heroes(version)?;
     sources.push(s);
     let mut hero_info = HashMap::new();
@@ -309,7 +313,7 @@ fn load(version: u32) -> Result<Catalog> {
         }
         Err(problem) => {
             eprintln!("deadlock-mcp: map: {}", problem.message());
-            complete = false;
+            sources.push(Source::failed(&problem));
             Vec::new()
         }
     };
@@ -323,7 +327,7 @@ fn load(version: u32) -> Result<Catalog> {
         }
         Err(problem) => {
             eprintln!("deadlock-mcp: accolades: {}", problem.message());
-            complete = false;
+            sources.push(Source::failed(&problem));
             HashMap::new()
         }
     };
@@ -336,7 +340,9 @@ fn load(version: u32) -> Result<Catalog> {
         lanes,
         landmarks,
         accolades,
-        retry_at: (!complete || sources.iter().any(|s| s.stale))
+        retry_at: sources
+            .iter()
+            .any(degraded)
             .then(|| Instant::now() + RETRY_INCOMPLETE),
         sources,
     })

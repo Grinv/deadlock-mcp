@@ -13,6 +13,7 @@ use rmcp::transport::stdio;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    http::prune_cache();
     server::DeadlockServer
         .serve(stdio())
         .await?

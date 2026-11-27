@@ -51,7 +51,7 @@ Data flows down this list: a module uses only the ones above it.
 - Argument types use `#[serde(deny_unknown_fields)]`, a `garde` rule on every field, and a doc
   comment that becomes the schema description. Serde can't combine `#[serde(flatten)]` with
   `deny_unknown_fields`, so repeat shared fields instead.
-- Every answer has `sources`, plus `cat.stale_sources()` when it used the catalog. Text written by
+- Every answer has `sources`, plus `cat.degraded_sources()` when it used the catalog. Text written by
   people (Steam names, the wiki) goes through `domain::format::plain`. Every win rate carries its
   match count.
 - Errors are `Problem`s of an existing kind. A new kind needs a section in `docs/errors.md`, and a

@@ -101,9 +101,11 @@ prompt. Nothing needs a key or a login.
   project not affiliated with Valve. Mechanics and lore come from the Deadlock Wiki. Every answer
   lists its `sources`.
 - Answers are cached on disk in `$XDG_CACHE_HOME/deadlock-mcp` (`~/.cache/deadlock-mcp`, or
-  `%LOCALAPPDATA%\deadlock-mcp` on Windows). Finished matches stay cached for good; other answers
-  expire after 60 seconds to 24 hours and are revalidated with `ETag`. When a source fails, an older
-  copy is used and marked `stale`. To clear the cache, delete the folder.
+  `%LOCALAPPDATA%\deadlock-mcp` on Windows). Finished matches stay cached until unused; other
+  answers expire after 60 seconds to 24 hours and are revalidated with `ETag`. When a source fails,
+  an older copy is used and marked `stale`; when an optional part (Steam names, place names, awards)
+  can't be fetched at all, the answer leaves it out and its source carries the `error`. Entries unused for 30 days are deleted when the server
+  starts. To clear the cache, delete the folder.
 - The catalog of heroes, items, ranks and lanes follows the newest game version the Deadlock API
   has processed, so after a patch the names update once the API catches up.
 - The server sends at most 10 requests per second to each site. It retries once after a network

@@ -18,11 +18,7 @@ use crate::http::Source;
 use crate::problem::Result;
 use crate::sources::api;
 use crate::tools::player::steam_names;
-use crate::tools::{Filters, round, take, win_rate};
-
-fn id32(id: i64) -> u32 {
-    u32::try_from(id).unwrap_or_default()
-}
+use crate::tools::{Filters, id32, per, round, take, win_rate};
 
 /// Win rate of a row for sorting; rows without matches sort last.
 fn rate(wins: i64, matches: i64) -> f64 {
@@ -39,7 +35,9 @@ fn pick_rate(matches: i64, matches_since_first_day: i64) -> f64 {
 }
 
 fn sources(source: Source, cat: &Catalog) -> Vec<Source> {
-    std::iter::once(source).chain(cat.stale_sources()).collect()
+    std::iter::once(source)
+        .chain(cat.degraded_sources())
+        .collect()
 }
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
@@ -72,15 +70,6 @@ pub struct HeroStats {
     pub matches: i64,
     pub heroes: Vec<HeroRow>,
     pub sources: Vec<Source>,
-}
-
-#[expect(clippy::cast_precision_loss, reason = "counts are far below 2^52")]
-fn per(total: i64, matches: i64) -> f64 {
-    if matches == 0 {
-        0.0
-    } else {
-        round(total as f64 / matches as f64, 2)
-    }
 }
 
 pub fn hero_stats(
@@ -463,7 +452,7 @@ pub fn builds(
         builds,
         sources: std::iter::once(source)
             .chain(names_source)
-            .chain(cat.stale_sources())
+            .chain(cat.degraded_sources())
             .collect(),
     })
 }

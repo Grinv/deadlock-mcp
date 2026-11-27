@@ -14,7 +14,7 @@ use crate::domain::outcome::{PlayerResult, player_result};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::sources::api;
-use crate::tools::{Filters, round, take, win_rate};
+use crate::tools::{Filters, id32, per, round, take, win_rate};
 
 const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 
@@ -142,17 +142,8 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
         )));
     }
     let (rank, rank_source) = api::rank(account_id)?;
-    // The name is a nicety: the overview stands without it, so log and go on.
-    let (steam_name, profile_source) = match api::steam_profiles(&[account_id]) {
-        Ok((profiles, source)) => (
-            profiles.into_iter().next().map(|p| plain(&p.personaname)),
-            Some(source),
-        ),
-        Err(problem) => {
-            eprintln!("deadlock-mcp: steam name: {}", problem.message());
-            (None, None)
-        }
-    };
+    let (mut names, profile_source) = steam_names(&[account_id]);
+    let steam_name = names.remove(&account_id);
 
     let result_of = |m: &PlayerMatchHistoryEntry| {
         player_result(
@@ -160,8 +151,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
             i64::from(m.player_team) == m.match_result,
         )
     };
-    let hero_of =
-        |m: &PlayerMatchHistoryEntry| cat.hero(u32::try_from(m.hero_id).unwrap_or_default());
+    let hero_of = |m: &PlayerMatchHistoryEntry| cat.hero(id32(m.hero_id.into()));
     let (mut wins, mut losses, mut not_scored) = (0, 0, 0);
     let mut heroes: HashMap<i32, (u32, u32, u32)> = HashMap::new();
     for m in &history {
@@ -189,7 +179,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
             .into_iter()
             .take(5)
             .map(|(h, (m, w, l))| HeroRecord {
-                hero: cat.hero(u32::try_from(h).unwrap_or_default()),
+                hero: cat.hero(id32(h.into())),
                 matches: m,
                 wins: w,
                 losses: l,
@@ -213,13 +203,13 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
         sources: [history_source, rank_source]
             .into_iter()
             .chain(profile_source)
-            .chain(cat.stale_sources())
+            .chain(cat.degraded_sources())
             .collect(),
     })
 }
 
-/// Steam names of `ids` in one request. Names only decorate an answer, so a failure is logged
-/// and the answer goes on without them.
+/// Steam names of `ids` in one request. Names only decorate an answer, so a failure goes into the
+/// answer's sources and the answer goes on without them.
 pub fn steam_names(ids: &[u32]) -> (HashMap<u32, String>, Option<Source>) {
     if ids.is_empty() {
         return (HashMap::new(), None);
@@ -234,21 +224,8 @@ pub fn steam_names(ids: &[u32]) -> (HashMap<u32, String>, Option<Source>) {
         ),
         Err(problem) => {
             eprintln!("deadlock-mcp: steam names: {}", problem.message());
-            (HashMap::new(), None)
+            (HashMap::new(), Some(Source::failed(&problem)))
         }
-    }
-}
-
-fn id32(id: i64) -> u32 {
-    u32::try_from(id).unwrap_or_default()
-}
-
-#[expect(clippy::cast_precision_loss, reason = "counts are far below 2^52")]
-fn per(total: i64, matches: i64) -> f64 {
-    if matches == 0 {
-        0.0
-    } else {
-        round(total as f64 / matches as f64, 2)
     }
 }
 
@@ -324,7 +301,9 @@ pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHe
         matches,
         heroes,
         more_heroes,
-        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+        sources: std::iter::once(source)
+            .chain(cat.degraded_sources())
+            .collect(),
     })
 }
 
@@ -535,7 +514,9 @@ pub fn deaths_map(
         kills: cells.iter().map(|c| c.kills).sum(),
         death_hotspots: spots(true),
         kill_hotspots: spots(false),
-        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+        sources: std::iter::once(source)
+            .chain(cat.degraded_sources())
+            .collect(),
     })
 }
 

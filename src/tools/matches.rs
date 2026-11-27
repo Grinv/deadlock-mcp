@@ -165,7 +165,7 @@ pub fn summary(match_id: u64) -> Result<Summary> {
         sources: [Some(source), names_source]
             .into_iter()
             .flatten()
-            .chain(cat.stale_sources())
+            .chain(cat.degraded_sources())
             .collect(),
     })
 }
@@ -452,7 +452,9 @@ pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
         awards: awards(&cat, p),
         deaths_detail,
         purchases,
-        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+        sources: std::iter::once(source)
+            .chain(cat.degraded_sources())
+            .collect(),
     })
 }
 
@@ -525,6 +527,8 @@ pub fn lanes(match_id: u64) -> Result<MatchLanes> {
         match_id,
         teams: TEAMS.map(team_name),
         lanes,
-        sources: std::iter::once(source).chain(cat.stale_sources()).collect(),
+        sources: std::iter::once(source)
+            .chain(cat.degraded_sources())
+            .collect(),
     })
 }
