@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::contracts::api::FeedItem;
-use crate::domain::assets::catalog;
+use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{bounded, clip, plain, strip_tags};
 use crate::domain::items::{self, Item, ItemKind};
 use crate::http::Source;
@@ -69,6 +69,10 @@ pub struct Lookup {
 
 pub fn lookup(query: &str) -> Result<Lookup> {
     let cat = catalog()?;
+    lookup_from(&cat, query)
+}
+
+fn lookup_from(cat: &Catalog, query: &str) -> Result<Lookup> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Err(Problem::invalid_argument(
@@ -268,6 +272,15 @@ fn fields(f: &FeedItem) -> (&'static str, &String, &String, &String, &String) {
 
 pub fn patches(link: Option<&str>, limit: usize) -> Result<PatchFeed> {
     let (feed, source) = crate::sources::api::patches()?;
+    patches_from(link, limit, &feed, vec![source])
+}
+
+fn patches_from(
+    link: Option<&str>,
+    limit: usize,
+    feed: &[FeedItem],
+    sources: Vec<Source>,
+) -> Result<PatchFeed> {
     let day = |d: &str| d.get(..10).unwrap_or(d).to_owned();
     if let Some(wanted) = link {
         let Some((_, title, date, link, content)) =
@@ -287,7 +300,7 @@ pub fn patches(link: Option<&str>, limit: usize) -> Result<PatchFeed> {
                 text,
                 truncated,
             }),
-            sources: vec![source],
+            sources,
         });
     }
     Ok(PatchFeed {
@@ -303,6 +316,118 @@ pub fn patches(link: Option<&str>, limit: usize) -> Result<PatchFeed> {
             })
             .collect(),
         notes: None,
-        sources: vec![source],
+        sources,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_ranks_exact_then_short_names() {
+        let mut cat = Catalog::test(&[(1, "Infernus"), (2, "Beamer"), (13, "Beam Ghost")]);
+        for (id, name) in [
+            (101, "Beam Blast"),
+            (130, "Echo Beam"),
+            (105, "Iron Beam"),
+            (112, "Beam"),
+            (120, "Echo Beam"),
+            (140, "Shield"),
+        ] {
+            cat.items
+                .insert(id, Item::test(id, name, ItemKind::Upgrade));
+        }
+        let found = |q: &str| {
+            let l = lookup_from(&cat, q).unwrap();
+            let names: Vec<_> = l.results.iter().map(|e| (e.id, e.name.clone())).collect();
+            (names, l.truncated)
+        };
+        // Playable heroes first (13 is not); then the exact name, then shorter names, then by name
+        // and id.
+        assert_eq!(
+            found(" BEAM "),
+            (
+                vec![
+                    (2, "Beamer".to_owned()),
+                    (112, "Beam".to_owned()),
+                    (120, "Echo Beam".to_owned()),
+                    (130, "Echo Beam".to_owned()),
+                    (105, "Iron Beam".to_owned()),
+                    (101, "Beam Blast".to_owned()),
+                ],
+                false
+            )
+        );
+        // An id names a hero or an item, playable or not.
+        assert_eq!(found("13"), (vec![(13, "Beam Ghost".to_owned())], false));
+        assert_eq!(
+            lookup_from(&cat, "zzz").err().unwrap().message(),
+            "Not found: nothing named like \"zzz\"; try part of the name, e.g. \"beam\""
+        );
+        assert_eq!(
+            lookup_from(&cat, "  ").err().unwrap().message(),
+            "Invalid argument: query is empty; give a hero, ability or item name, or an id"
+        );
+    }
+
+    #[test]
+    fn lookup_cuts_at_the_limit() {
+        let mut cat = Catalog::test(&[]);
+        for id in 0..16 {
+            cat.items.insert(
+                id,
+                Item::test(id, &format!("Beam {id:02}"), ItemKind::Upgrade),
+            );
+        }
+        let l = lookup_from(&cat, "beam").unwrap();
+        assert_eq!((l.results.len(), l.truncated), (15, true));
+        assert_eq!(l.results[14].name, "Beam 14");
+    }
+
+    fn feed() -> Vec<FeedItem> {
+        serde_json::from_str(include_str!("../../contracts/fixtures/patches.json")).unwrap()
+    }
+
+    #[test]
+    fn patches_list_and_find_by_link() {
+        let list = patches_from(None, 1, &feed(), Vec::new()).unwrap();
+        let rows: Vec<_> = list
+            .patches
+            .iter()
+            .map(|p| (p.title.as_str(), p.date.as_str(), p.source, p.link.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [(
+                "09-29-2026",
+                "2026-10-15",
+                "forum",
+                "https://forums.playdeadlock.com/threads/09-29-2026.166726/"
+            )]
+        );
+        assert!(list.notes.is_none());
+
+        let link = "https://store.steampowered.com/news/app/1422450/view/680766201707627248";
+        let one = patches_from(Some(&format!(" {link} ")), 10, &feed(), Vec::new()).unwrap();
+        let notes = one.notes.unwrap();
+        assert!(one.patches.is_empty());
+        assert_eq!(
+            (
+                notes.title.as_str(),
+                notes.date.as_str(),
+                notes.link.as_str()
+            ),
+            ("Ranked - Beta Season 2", "2026-11-05", link)
+        );
+        assert!(!notes.truncated);
+
+        assert_eq!(
+            patches_from(Some("https://example.com/"), 10, &feed(), Vec::new())
+                .err()
+                .unwrap()
+                .message(),
+            "Not found: no patch with link \"https://example.com/\" in the feed; call patches without a link to list them"
+        );
+    }
 }
