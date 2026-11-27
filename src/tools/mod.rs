@@ -1,5 +1,6 @@
 //! Tool logic and answer types; `src/server/` only routes MCP calls here.
 
+pub mod combat;
 pub mod game;
 pub mod matches;
 pub mod meta;

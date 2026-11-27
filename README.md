@@ -22,7 +22,7 @@ Each tool answers one question; the assistant combines them.
 | Area | Tools |
 |---|---|
 | Players | `player_search` (account id from a Steam name, SteamID64 or profile link), `player_overview`, `player_heroes`, `player_mates`, `player_enemies`, `player_deaths_map`, `ingest_status` |
-| Matches | `match_summary`, `match_player` (souls by source, unspent souls, deaths with killers and the nearest objective, purchases, award stats such as crates broken and damage by type), `match_lanes` |
+| Matches | `match_summary` (with the objectives destroyed), `match_player` (souls by source, unspent souls, deaths with killers and the nearest objective, purchases, ability upgrades, award stats such as crates broken and damage by type), `match_lanes`, `match_damage` (damage both ways between a player and each hero, by ability, weapon and item, with killing damage and crowd control), `match_distance` (how long a player stood within 10 to 60 m of each hero) |
 | Meta | `hero_stats`, `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `performance_curve` (the average net worth, K/D/A and souls by source over a match), `stat_percentiles` (where a match's stats rank), `builds`, `leaderboard`, `patches` |
 | Game | `game_lookup` (heroes, abilities and items with their tooltips), `wiki_search`, `wiki_page` |
 

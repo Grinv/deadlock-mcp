@@ -28,7 +28,7 @@ const TEAMS: [ECitadelLobbyTeam; 2] = [
 /// Samples the per-player stats come in during the laning phase.
 const LANE_SAMPLES_S: [u32; 5] = [180, 360, 540, 720, 900];
 
-fn load(match_id: u64) -> Result<(MatchInfo, Source)> {
+pub(crate) fn load(match_id: u64) -> Result<(MatchInfo, Source)> {
     let (meta, source) = api::match_metadata(match_id).map_err(|p| {
         if p.kind == Kind::NotFound {
             Problem::not_found(format!(
@@ -70,7 +70,7 @@ fn left_at(p: &Players) -> Option<String> {
     happened_at(p.abandon_match_time_s())
 }
 
-fn find_player(info: &MatchInfo, match_id: u64, account_id: u32) -> Result<&Players> {
+pub(crate) fn find_player(info: &MatchInfo, match_id: u64, account_id: u32) -> Result<&Players> {
     info.players
         .iter()
         .find(|p| p.account_id() == account_id)
@@ -117,6 +117,13 @@ pub struct SummaryTeam {
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct DestroyedObjective {
+    /// Named after the team that lost it, e.g. "The Archmother's York Guardian".
+    pub name: String,
+    pub destroyed_at: String,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct Summary {
     pub match_id: u64,
     pub date: String,
@@ -129,6 +136,8 @@ pub struct Summary {
     pub low_priority_pool: bool,
     pub duration: String,
     pub winner: &'static str,
+    /// The objectives destroyed, in order.
+    pub objectives: Vec<DestroyedObjective>,
     pub teams: Vec<SummaryTeam>,
     pub sources: Vec<Source>,
 }
@@ -176,6 +185,19 @@ fn summary_from(
                 .collect(),
         })
         .collect();
+    let mut destroyed: Vec<_> = info
+        .objectives
+        .iter()
+        .filter(|o| o.destroyed_time_s() > 0)
+        .collect();
+    destroyed.sort_by_key(|o| o.destroyed_time_s());
+    let objectives = destroyed
+        .into_iter()
+        .map(|o| DestroyedObjective {
+            name: cat.objective(o.team(), o.team_objective_id()),
+            destroyed_at: mmss(u64::from(o.destroyed_time_s())),
+        })
+        .collect();
     Summary {
         match_id,
         date: date(i64::from(info.start_time())),
@@ -184,6 +206,7 @@ fn summary_from(
         low_priority_pool: info.low_pri_pool(),
         duration: mmss(u64::from(info.duration_s())),
         winner: team_name(winner),
+        objectives,
         teams,
         sources,
     }
@@ -254,6 +277,14 @@ pub struct Purchase {
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct AbilityUpgrade {
+    pub at: String,
+    pub ability: String,
+    /// 0 = unlocked, 1 to 3 = its first to third upgrade.
+    pub level: u32,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct PlayerReport {
     pub match_id: u64,
     pub account_id: u32,
@@ -291,6 +322,9 @@ pub struct PlayerReport {
     pub awards: Vec<Award>,
     pub deaths_detail: Vec<Death>,
     pub purchases: Vec<Purchase>,
+    /// Ability points as spent on the hero's four abilities, in time order. Compare the order with
+    /// `ability_order`'s most common and best-winning ones.
+    pub ability_upgrades: Vec<AbilityUpgrade>,
     pub sources: Vec<Source>,
 }
 
@@ -405,6 +439,23 @@ fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
         .collect()
 }
 
+/// The hero's abilities among the items, in their order: `upgrade_info >> 16` is 1, 3, 7 and 15
+/// for the unlock and the three upgrades.
+fn ability_upgrades(cat: &Catalog, p: &Players) -> Vec<AbilityUpgrade> {
+    let abilities = cat.abilities(p.hero_id());
+    p.items
+        .iter()
+        .filter_map(|i| {
+            let ability = abilities.iter().find(|a| a.id == i.item_id())?;
+            Some(AbilityUpgrade {
+                at: mmss(u64::from(i.game_time_s())),
+                ability: ability.name.clone(),
+                level: (i.upgrade_info() >> 16).count_ones().checked_sub(1)?,
+            })
+        })
+        .collect()
+}
+
 pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
     let cat = catalog()?;
     let (info, source) = load(match_id)?;
@@ -498,6 +549,7 @@ fn player_from(
         awards: awards(cat, p),
         deaths_detail,
         purchases,
+        ability_upgrades: ability_upgrades(cat, p),
         sources,
     })
 }
@@ -587,6 +639,7 @@ mod tests {
     use super::*;
     use crate::contracts::api;
     use crate::contracts::valve::CMsgMatchMetaDataContents;
+    use crate::contracts::valve::c_msg_match_meta_data_contents::Items;
     use crate::domain::items::Item;
 
     /// Match 143768397 from `contracts/fixtures/match_metadata.json`.
@@ -895,6 +948,75 @@ mod tests {
                     Some("The Archmother's Patron"),
                     [794, 6812]
                 ),
+            ])
+        );
+    }
+
+    #[test]
+    fn summary_lists_destroyed_objectives() {
+        let s = summary_from(&cat(), MATCH, &fixture(), &HashMap::new(), Vec::new());
+        let got: Vec<_> = s
+            .objectives
+            .iter()
+            .map(|o| format!("{} {}", o.destroyed_at, o.name))
+            .collect();
+        // 19 of the 20 fell; the Hidden King's Broadway Base Guardians stood.
+        assert_eq!(got.len(), 19);
+        assert_eq!(
+            got[..3],
+            [
+                "8:46 The Archmother's Broadway Guardian",
+                "9:32 The Archmother's Greenwich Guardian",
+                "10:53 The Archmother's York Guardian",
+            ]
+        );
+        assert_eq!(got[10], "29:11 The Archmother's York Base Guardians");
+        assert_eq!(
+            got[14..],
+            [
+                "33:49 The Archmother's Shrine",
+                "34:07 The Archmother's Shrine",
+                "34:39 The Archmother's Broadway Base Guardians",
+                "38:14 The Archmother's Patron",
+                "39:53 The Archmother's Weakened Patron",
+            ]
+        );
+    }
+
+    #[test]
+    fn ability_upgrades_in_order() {
+        let ability = |id, name: &str| {
+            let mut i = Item::test(id, name, ItemKind::Ability);
+            (i.hero, i.ability_type) = (Some(72), Some(api::AbilityType::Signature));
+            i
+        };
+        let cat = Catalog::test(&[(72, "H72")]).with_items(vec![
+            ability(1_841_661_392, "Bashdown"),
+            ability(1_792_773_251, "Rising Ram"),
+        ]);
+        let mut info = fixture();
+        let me = player_mut(&mut info, ME);
+        // From the match: Bashdown's third upgrade at 11:09, and an item that is no ability.
+        me.items.push(Items {
+            game_time_s: Some(669),
+            item_id: Some(1_841_661_392),
+            upgrade_info: Some(983_040),
+            ..Items::default()
+        });
+        me.items.push(Items {
+            game_time_s: Some(700),
+            item_id: Some(7),
+            upgrade_info: Some(65_536),
+            ..Items::default()
+        });
+        let r = player_from(&cat, MATCH, ME, &info, Vec::new()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&r.ability_upgrades).unwrap(),
+            json!([
+                {"at": "0:11", "ability": "Bashdown", "level": 0},
+                {"at": "0:52", "ability": "Bashdown", "level": 1},
+                {"at": "1:43", "ability": "Rising Ram", "level": 0},
+                {"at": "11:09", "ability": "Bashdown", "level": 3},
             ])
         );
     }

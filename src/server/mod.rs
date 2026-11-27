@@ -50,7 +50,10 @@ they are: player_heroes (their matches on this hero), and whether the match is r
 2. Get the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
 in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), and match_player for the player.
 3. For the player's lane, call match_player for both lane opponents and the lane partner: compare souls by source \
-(lane, jungle, kills, objectives, urn), net worth over time, and when each bought what.
+(lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability \
+upgrades against ability_order. match_damage with until_minute 15: who hurt the player and who finished them, with what. \
+match_distance with until_minute 15: time spent near each lane opponent; call game_lookup for the lane \
+opponents' and the player's heroes and read that time against their abilities' ranges.
 4. Compare the player with the hero's meta, at their rank when the match is ranked (min_rank/max_rank as \
 player_overview names it), over all ranks otherwise: performance_curve (their net worth at each snapshot against the \
 average and its spread: when they fell behind, and which souls they lacked) and stat_percentiles (deaths, souls per \

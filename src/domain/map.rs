@@ -13,7 +13,7 @@
 //! of the dead hero's own lane.
 
 use crate::contracts::api;
-use crate::contracts::valve::ECitadelLobbyTeam;
+use crate::contracts::valve::{ECitadelLobbyTeam, ECitadelTeamObjective};
 use crate::domain::assets::{Lane, hex};
 use crate::domain::terms::team_name;
 
@@ -23,6 +23,8 @@ const NEAR: f64 = 2000.0;
 pub struct Landmark {
     name: String,
     at: [f64; 2],
+    /// The asset's lane number (`tier<1|2>_<n>`) and the lane's name.
+    lane: Option<(u32, String)>,
 }
 
 fn xy(v: &[f64]) -> Option<[f64; 2]> {
@@ -93,15 +95,14 @@ pub fn landmarks(map: &api::MapData, lanes: &[(u32, Lane)]) -> Vec<Landmark> {
                 _ => return None,
             };
             let team = team_name(team);
-            let name = match what
-                .contains('_')
-                .then(|| lane_at(map, lanes, at))
-                .flatten()
-            {
-                Some(lane) => format!("{team}'s {} {kind}", lane.name),
+            let lane = what
+                .split_once('_')
+                .and_then(|(_, n)| Some((n.parse().ok()?, lane_at(map, lanes, at)?.name.clone())));
+            let name = match &lane {
+                Some((_, lane)) => format!("{team}'s {lane} {kind}"),
                 None => format!("{team}'s {kind}"),
             };
-            Some(Landmark { name, at })
+            Some(Landmark { name, at, lane })
         })
         .collect()
 }
@@ -114,6 +115,48 @@ pub fn near(landmarks: &[Landmark], x: f64, y: f64) -> Option<String> {
         .filter(|(d, _)| *d <= NEAR)
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, l)| l.name.clone())
+}
+
+/// A match objective's name, e.g. "The Archmother's York Guardian", as the game calls it
+/// (<https://deadlock.wiki/Base_Guardian>, <https://deadlock.wiki/Shrine>,
+/// <https://deadlock.wiki/Patron>). `team` owns it. The enum's lane numbers are the map asset's,
+/// so a lane is named as `landmarks` named that lane's Guardians.
+pub fn objective_name(
+    landmarks: &[Landmark],
+    team: ECitadelLobbyTeam,
+    objective: ECitadelTeamObjective,
+) -> String {
+    use ECitadelTeamObjective as O;
+    let (kind, lane) = match objective {
+        // Destroyed last, when the match ends: the Patron's second phase.
+        O::KECitadelTeamObjectiveCore => ("Weakened Patron", None),
+        O::KECitadelTeamObjectiveTier1Lane1 => ("Guardian", Some(1)),
+        O::KECitadelTeamObjectiveTier1Lane2 => ("Guardian", Some(2)),
+        O::KECitadelTeamObjectiveTier1Lane3 => ("Guardian", Some(3)),
+        O::KECitadelTeamObjectiveTier1Lane4 => ("Guardian", Some(4)),
+        O::KECitadelTeamObjectiveTier2Lane1 => ("Walker", Some(1)),
+        O::KECitadelTeamObjectiveTier2Lane2 => ("Walker", Some(2)),
+        O::KECitadelTeamObjectiveTier2Lane3 => ("Walker", Some(3)),
+        O::KECitadelTeamObjectiveTier2Lane4 => ("Walker", Some(4)),
+        O::KECitadelTeamObjectiveTitan => ("Patron", None),
+        O::KECitadelTeamObjectiveTitanShieldGenerator1
+        | O::KECitadelTeamObjectiveTitanShieldGenerator2 => ("Shrine", None),
+        O::KECitadelTeamObjectiveBarrackBossLane1 => ("Base Guardians", Some(1)),
+        O::KECitadelTeamObjectiveBarrackBossLane2 => ("Base Guardians", Some(2)),
+        O::KECitadelTeamObjectiveBarrackBossLane3 => ("Base Guardians", Some(3)),
+        O::KECitadelTeamObjectiveBarrackBossLane4 => ("Base Guardians", Some(4)),
+    };
+    let team = team_name(team);
+    let Some(n) = lane else {
+        return format!("{team}'s {kind}");
+    };
+    match landmarks
+        .iter()
+        .find_map(|l| l.lane.as_ref().filter(|(i, _)| *i == n))
+    {
+        Some((_, lane)) => format!("{team}'s {lane} {kind}"),
+        None => format!("{team}'s lane {n} {kind}"),
+    }
 }
 
 #[cfg(test)]
@@ -159,5 +202,63 @@ mod tests {
         );
         // Between the lanes, far from any objective.
         assert_eq!(at(-4071.0, 2172.0), None);
+    }
+
+    #[test]
+    fn names_match_objectives() {
+        let map: api::MapData =
+            serde_json::from_str(include_str!("../../contracts/fixtures/map.json")).unwrap();
+        let lane = |name: &str, color: &str| Lane {
+            name: name.to_owned(),
+            color: Some(color.to_owned()),
+        };
+        let lanes = [
+            (1, lane("York", "#F1CC30")),
+            (4, lane("Broadway", "#29B1CC")),
+            (6, lane("Greenwich", "#59B247")),
+        ];
+        let marks = landmarks(&map, &lanes);
+        let name = |team, objective| objective_name(&marks, team, objective);
+        let (hidden_king, archmother) = (
+            ECitadelLobbyTeam::KECitadelLobbyTeamTeam0,
+            ECitadelLobbyTeam::KECitadelLobbyTeamTeam1,
+        );
+        // Asset lanes 1, 3 and 4 are York, Broadway and Greenwich (see the test above).
+        assert_eq!(
+            name(
+                archmother,
+                ECitadelTeamObjective::KECitadelTeamObjectiveTier1Lane1
+            ),
+            "The Archmother's York Guardian"
+        );
+        assert_eq!(
+            name(
+                hidden_king,
+                ECitadelTeamObjective::KECitadelTeamObjectiveTier2Lane4
+            ),
+            "The Hidden King's Greenwich Walker"
+        );
+        assert_eq!(
+            name(
+                archmother,
+                ECitadelTeamObjective::KECitadelTeamObjectiveBarrackBossLane3
+            ),
+            "The Archmother's Broadway Base Guardians"
+        );
+        assert_eq!(
+            name(
+                archmother,
+                ECitadelTeamObjective::KECitadelTeamObjectiveTitan
+            ),
+            "The Archmother's Patron"
+        );
+        // No lane 2 on this map.
+        assert_eq!(
+            name(
+                hidden_king,
+                ECitadelTeamObjective::KECitadelTeamObjectiveTier1Lane2
+            ),
+            "The Hidden King's lane 2 Guardian"
+        );
     }
 }

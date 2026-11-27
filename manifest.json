@@ -101,15 +101,23 @@
       "name": "leaderboard"
     },
     {
+      "description": "Who damaged a player and whom they damaged, with what, and who finished them: per hero, damage\nboth ways by ability, weapon and item, killing damage and crowd control received.",
+      "name": "match_damage"
+    },
+    {
+      "description": "How close a player stood to each other player: seconds within 10 to 60 m of each hero while both\nwere alive, over a window of the match.",
+      "name": "match_distance"
+    },
+    {
       "description": "The three lanes of a match: who laned against whom and the soul lead every 3 minutes up to 15:00.",
       "name": "match_lanes"
     },
     {
-      "description": "One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths\nwith killers, positions and the nearest objective, purchases and permanent buffs.",
+      "description": "One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths\nwith killers, positions and the nearest objective, purchases, ability upgrades and permanent buffs.",
       "name": "match_player"
     },
     {
-      "description": "A match's mode, length and winner, and every player's hero, lane, K/D/A, souls, damage and own result.",
+      "description": "A match's mode, length, winner and objectives destroyed, and every player's hero, lane, K/D/A, souls,\ndamage and own result.",
       "name": "match_summary"
     },
     {

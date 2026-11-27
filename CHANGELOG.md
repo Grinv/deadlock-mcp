@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `match_damage`: who damaged a player and whom they damaged, by ability, weapon and item, who
+  finished them (killing damage) and the crowd control they took, up to a minute or the match end.
+- `match_distance`: how many seconds a player stood within 10, 20, 30, 45 and 60 m of each other
+  hero in a window of the match.
+- `match_summary` lists the objectives destroyed, in order; `match_player` the ability upgrades, in
+  order.
 - `hero_counters` and `hero_synergies` take `heroes`: each named hero's win rate, matches and place
   among all pairs with its direction (`hardest_place`, `best_place`), next to the hero's average
   win rate.

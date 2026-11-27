@@ -21,6 +21,8 @@ pub enum ItemKind {
 pub struct Item {
     pub id: u32,
     pub name: String,
+    /// The game's own name, e.g. `ability_chessmaster_throwbishop`; match damage names its sources so.
+    pub class_name: String,
     pub kind: ItemKind,
     /// The game's kind of an ability: a hero's four are `signature` and `ultimate`.
     pub ability_type: Option<api::AbilityType>,
@@ -102,6 +104,7 @@ impl From<api::Item> for Item {
             api::Item::Ability {
                 id,
                 name,
+                class_name,
                 hero,
                 ability_type,
                 description: d,
@@ -110,6 +113,7 @@ impl From<api::Item> for Item {
             } => Self {
                 id: id32(id),
                 name,
+                class_name,
                 kind: ItemKind::Ability,
                 ability_type,
                 slot: None,
@@ -131,9 +135,16 @@ impl From<api::Item> for Item {
                     )
                 }),
             },
-            api::Item::Weapon { id, name, hero, .. } => Self {
+            api::Item::Weapon {
+                id,
+                name,
+                class_name,
+                hero,
+                ..
+            } => Self {
                 id: id32(id),
                 name,
+                class_name,
                 kind: ItemKind::Weapon,
                 ability_type: None,
                 slot: None,
@@ -147,6 +158,7 @@ impl From<api::Item> for Item {
             api::Item::Upgrade {
                 id,
                 name,
+                class_name,
                 hero,
                 item_slot_type,
                 item_tier,
@@ -158,6 +170,7 @@ impl From<api::Item> for Item {
             } => Self {
                 id: id32(id),
                 name,
+                class_name,
                 kind: ItemKind::Upgrade,
                 ability_type: None,
                 slot: Some(item_slot_type),
@@ -201,6 +214,7 @@ mod tests {
             Self {
                 id,
                 name: name.to_owned(),
+                class_name: String::new(),
                 kind,
                 ability_type: None,
                 slot: None,

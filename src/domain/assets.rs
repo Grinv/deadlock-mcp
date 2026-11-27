@@ -159,6 +159,11 @@ impl Catalog {
         self.items.get(&id)
     }
 
+    /// The item with the game's own name, e.g. `ability_chessmaster_throwbishop`.
+    pub fn item_by_class(&self, class_name: &str) -> Option<&Item> {
+        self.items.values().find(|i| i.class_name == class_name)
+    }
+
     /// `tier * 10 + subrank`, e.g. 116 = "Eternus VI"; 0 = unranked (Obscurus).
     pub fn rank(&self, badge: i64) -> String {
         let Some(tier) = self.ranks.get(&(badge / 10)) else {
@@ -245,6 +250,15 @@ impl Catalog {
     /// Guardian".
     pub fn near(&self, x: f64, y: f64) -> Option<String> {
         map::near(&self.landmarks, x, y)
+    }
+
+    /// A match objective by its owner and kind, e.g. "The Archmother's York Guardian".
+    pub fn objective(
+        &self,
+        team: crate::contracts::valve::ECitadelLobbyTeam,
+        objective: crate::contracts::valve::ECitadelTeamObjective,
+    ) -> String {
+        map::objective_name(&self.landmarks, team, objective)
     }
 
     pub fn accolade(&self, id: u32) -> Option<&api::Accolade> {
