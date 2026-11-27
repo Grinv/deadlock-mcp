@@ -50,4 +50,5 @@ A bug in this server, not a problem with the data source. Please report it with 
 caused it.
 
 When a request fails and an older copy is cached, the tool answers with that copy instead and marks it `stale` in
-the answer's `sources`.
+the answer's `sources`. When a part an answer can go without (Steam names, place names, awards) fails with nothing
+cached, the answer leaves it out and lists its source with an `error`, so the gap isn't read as "none".

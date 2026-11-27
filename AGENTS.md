@@ -17,12 +17,32 @@ cargo xtask manifest                     # regenerate manifest.json from Cargo.t
 directory. It needs the SHA-256 of the release's `.mcpb` archive, so the release runs it.
 
 CI runs the same with `CARGO_BUILD_WARNINGS=deny`, checks that `cargo xtask contracts` and
-`cargo xtask manifest` leave no diff, validates `manifest.json` with the mcpb CLI, and runs the tests
-on Linux, Windows and macOS (`.github/workflows/ci.yml`).
+`cargo xtask manifest` leave no diff, validates `manifest.json` with the mcpb CLI, and runs the
+tests on Linux, Windows and macOS (`.github/workflows/ci.yml`).
 
 The resolver skips dependency versions published less than 7 days ago (`.cargo/config.toml`). If a
 requirement in `Cargo.toml` names such a version, `cargo update` fails; lower the requirement and
 the locked version stays.
+
+## Releasing
+
+1. Set the new `version` in `Cargo.toml`, run `cargo xtask manifest`, and rename `## [Unreleased]`
+   in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` above a fresh, empty `[Unreleased]`.
+2. Commit, push, and once CI is green, tag `vx.y.z` and push the tag.
+
+`.github/workflows/release.yml` then runs the whole CI on the tagged commit and builds the binaries:
+Linux x86_64 and aarch64 against musl in a pinned Rust Alpine image (static, so they run on any
+glibc), macOS arm64 and x86_64 joined into one universal binary, Windows x64. It checks the tag
+against `Cargo.toml`, takes the release notes from the version's `CHANGELOG.md` section, packs
+`deadlock-mcp.mcpb`, creates the GitHub Release, and publishes `server.json` with the bundle's
+SHA-256 to the MCP Registry as `io.github.Grinv/deadlock-mcp`. Running the workflow by hand
+(`workflow_dispatch`) builds and packs everything without publishing, to try a change first.
+
+In the bundle, `server/deadlock-mcp` is the macOS binary, `server/deadlock-mcp-x86_64` and
+`-aarch64` the Linux ones, `server/deadlock-mcp.exe` the Windows one. On macOS and Linux the
+manifest starts them through `/bin/sh`: Claude Desktop unpacks bundles without the execute bit
+(modelcontextprotocol/mcpb#294), and MCPB can't pick a binary by CPU (mcpb#10). The commands are in
+`xtask/src/manifest.rs`.
 
 ## Layout
 

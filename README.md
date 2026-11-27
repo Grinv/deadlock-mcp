@@ -27,15 +27,16 @@ Each tool answers one question; the assistant combines them.
 | Game | `game_lookup` (heroes, abilities and items with their tooltips), `wiki_search`, `wiki_page` |
 
 Meta tools take a rank range by name (`min_rank`, `max_rank`, e.g. "Ascendant" or "Eternus III")
-and a period (`days`). Every win rate comes with the number of matches behind it, and small samples are left out.
+and a period (`days`, the last 30 by default). Every win rate comes with the number of matches
+behind it, and small samples are left out.
 
 A player's `result` is their own. When the game voids a match for a player, usually because a
 teammate left, it is `not_scored`; a leaver's match is a loss even if their team won.
 
 The server also has a prompt, `review_match`, that walks through a player's match and compares it
 with the meta. Its resources are `deadlock://heroes`, `deadlock://items` and one
-`deadlock://hero/{id}` per hero (role, lore, abilities); matches are read through the template
-`deadlock://match/{match_id}`. Clients can complete a hero id from its name.
+`deadlock://hero/{id}` per playable hero (role, lore, abilities); matches are read through the
+template `deadlock://match/{match_id}`. Clients can complete a hero id from its name.
 
 ## What it can't do
 
@@ -60,24 +61,22 @@ directly, with the data already read for the assistant:
 - A player is found by Steam name, SteamID64 or profile link (`player_search`). When several
   accounts share a name, up to ten are listed for the assistant to choose from.
 - Answers use the game's terms. Ranks go in and come out by name ("Ascendant", "Eternus III").
-  Lanes and the objective nearest each death are named from the game files. An award says whether
-  it was earned and at which threshold.
-- A player's result is the one the game recorded for them, not their team's: when a teammate leaves,
-  the match doesn't count for the others, and a leaver loses even when the team wins.
-- Numbers come with what they mean. Every win rate has its match count and small samples are left
-  out; a counter's win rate says whose it is; a new hero's pick rate counts only the days since its
-  release.
+  Lanes and the objective nearest each death are named from the game files, an award says whether
+  it was earned and at which threshold, and a player's result is the one the game recorded for
+  them.
+- Numbers say what they measure: a counter's win rate says whose it is, and a new hero's pick rate
+  counts only the days since its release.
 - A question is usually one call. "Who counters Haze at Ascendant?" is one `hero_counters` call; a
   match review is `match_player`, `match_summary` and `match_lanes`, with the steps in the
   `review_match` prompt. With SQL the assistant first has to learn the schema and its pitfalls, such
   as voided matches and the rows that appear twice.
-- Answers hold only what the question needs: names rather than internal class names, plain text
-  rather than HTML, no image links. `game_lookup` for Haze is 1,620 characters with the abilities by
-  name; the Deadlock API server's details of Haze add 17 image links, a 3D model, a 36-row level
-  table and the abilities as class names (`ability_sleep_dagger`).
+- Answers hold what the question needs, in plain text and with no image links. `game_lookup` for
+  Haze is 1,620 characters and names the abilities. The Deadlock API server's details of Haze also
+  carry 17 image links, a 3D model and a 36-row level table, and list the abilities by class name
+  (`ability_sleep_dagger`).
 - Mechanics and lore come from the Deadlock Wiki, and item and ability tooltips keep their values.
-- A failure shows in the answer: a stale or missing source is marked, and a wrong argument comes back
-  with what was expected (an unknown rank lists the ranks).
+- A failure shows in the answer: a stale or missing source is marked, and a wrong argument comes
+  back with what was expected (an unknown rank lists the ranks).
 
 | | deadlock-mcp | The Deadlock API's MCP server |
 |---|---|---|
@@ -91,8 +90,21 @@ directly, with the data already read for the assistant:
 
 ## Download and use
 
-Prebuilt releases are planned: an `.mcpb` bundle for one-click install in Claude Desktop, and
-installers for Linux, macOS and Windows. Until then, build it with Rust 1.100 or newer:
+### As an `.mcpb` bundle (one click, e.g. Claude Desktop)
+
+Download [`deadlock-mcp.mcpb`](https://github.com/Grinv/deadlock-mcp/releases/latest/download/deadlock-mcp.mcpb)
+(always the latest release) and open it with your MCP client. One bundle carries the server for
+macOS (Apple Silicon and Intel), Windows (x64, which Windows on Arm runs through its x64
+emulation) and Linux (x86_64 and arm64, for Claude Desktop's Linux beta). It asks for no settings.
+
+To update, download the new bundle from the
+[releases page](https://github.com/Grinv/deadlock-mcp/releases) and install it again; it replaces
+the old version. To hear about new versions, watch the repository for releases on GitHub (Watch,
+Custom, Releases).
+
+### From source
+
+With Rust 1.100 or newer:
 
 ```sh
 cargo install --locked --git https://github.com/Grinv/deadlock-mcp deadlock-mcp
@@ -126,9 +138,10 @@ prompt. Nothing needs a key or a login.
 - Answers are cached on disk in `$XDG_CACHE_HOME/deadlock-mcp` (`~/.cache/deadlock-mcp`, or
   `%LOCALAPPDATA%\deadlock-mcp` on Windows). Finished matches stay cached until unused; other
   answers expire after 60 seconds to 24 hours and are revalidated with `ETag`. When a source fails,
-  an older copy is used and marked `stale`; when an optional part (Steam names, place names, awards)
-  can't be fetched at all, the answer leaves it out and its source carries the `error`. Entries unused for 30 days are deleted when the server
-  starts. To clear the cache, delete the folder.
+  an older copy is used and marked `stale`. When an optional part (Steam names, place names,
+  awards) can't be fetched at all, the answer leaves it out and its source carries the `error`.
+  Entries unused for 30 days are deleted when the server starts; to clear the cache, delete the
+  folder.
 - The catalog of heroes, items, ranks and lanes follows the newest game version the Deadlock API
   has processed, so after a patch the names update once the API catches up.
 - The server sends at most 10 requests per second to each site. It retries once after a network
@@ -153,4 +166,4 @@ this project is not affiliated with Valve.
 
 ## Development
 
-[AGENTS.md](AGENTS.md) has the layout, the commands and the rules for changes.
+[AGENTS.md](AGENTS.md) has the commands, the layout, how to release, and the rules for changes.

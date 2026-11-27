@@ -16,22 +16,21 @@ All notable changes to this project are documented here. The format is based on
   their matches.
 - Matches: summary of all twelve players, one player's match in depth (souls by source, unspent
   souls, deaths with killers, purchases, permanent buffs) and the soul lead per lane.
-- Meta by rank range (rank names as `player_overview` gives them, e.g. "Ascendant") and period: hero win and pick rates, items, counters, synergies, ability
-  orders, in-game builds, leaderboards and patch notes. Win rates come with their match counts.
+- Meta by rank range (rank names as `player_overview` gives them, e.g. "Ascendant") and period:
+  hero win and pick rates, items, counters, synergies, ability orders, in-game builds,
+  leaderboards and patch notes. Win rates come with their match counts.
 - Game knowledge: heroes, abilities and items with their tooltips, and Deadlock Wiki search and
   pages, lore included.
 - A player's own result: a match the game voided for them is `not_scored`, and a leaver's match is
   a loss even when their team won.
 - The `review_match` prompt, hero resources with name completion, and a match resource template.
-- Answers list their sources and flag stale copies; errors are RFC 9457 problems.
+- Answers list their sources and flag stale copies and parts that couldn't be fetched; errors are
+  RFC 9457 problems.
+- Answers are cached on disk; entries unused for 30 days are deleted at startup.
+- An `.mcpb` bundle for Claude Desktop and other MCPB clients, with the server for macOS, Windows
+  and Linux, and an entry in the MCP Registry.
 - The catalog follows the newest game version the Deadlock API has processed.
 - Deaths in `match_player` and hotspots in `player_deaths_map` name the objective they are near,
   e.g. "The Archmother's York Guardian"; `match_player` gives the net worth at each stats snapshot.
 - `performance_curve`: the average player's net worth, K/D/A, damage and souls by source over a
   match, and `stat_percentiles`: percentiles of per-match stats, both by hero, rank and period.
-
-### Changed
-
-- `deadlock://items` lists the shop slots in the game's order (weapon, spirit, vitality) instead of
-  alphabetically.
-- A build description `builds` cuts at 300 characters ends with "…", like other cut texts.

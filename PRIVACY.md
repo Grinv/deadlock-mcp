@@ -21,8 +21,9 @@ web request, these requests show the services your IP address.
 
 Answers are cached on your disk so repeated questions don't hit the network:
 `$XDG_CACHE_HOME/deadlock-mcp` (`~/.cache/deadlock-mcp`), or `%LOCALAPPDATA%\deadlock-mcp` on
-Windows. The cache holds the services' answers, which include public Steam names and profile links of
-the players you looked up. Nothing leaves your computer from there; delete the folder to clear it.
+Windows. The cache holds the services' answers, which include public Steam names and profile
+links of the players you looked up. Nothing leaves your computer from there. Entries unused for 30
+days are deleted when the server starts; delete the folder to clear it all.
 
 Errors such as a failed cache write go to standard error, which your MCP client may keep in its own
 log.
