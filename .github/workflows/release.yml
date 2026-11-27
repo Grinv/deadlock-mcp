@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # A dry run from any branch: builds and packs everything, checks nothing tag-specific, publishes
+  # nothing.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -99,18 +102,22 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
-      # A tag that doesn't match Cargo.toml would publish one version under another's name.
-      - name: Check the tag matches Cargo.toml
+      - name: Version from Cargo.toml
         run: |
           VERSION="$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "deadlock-mcp") | .version')"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      # A tag that doesn't match Cargo.toml would publish one version under another's name.
+      - name: Check the tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
           if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml's version $VERSION"
             exit 1
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       # CHANGELOG.md is the one source of the release notes: its section of this version.
       - name: Release notes from CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           awk -v ver="$VERSION" '
             $0 ~ "^## \\[" ver "\\]" {flag = 1; next}
@@ -159,6 +166,7 @@ jobs:
   # Holds the publishing rights and runs no project code: it only ships the package job's files.
   # contents: write -> the GitHub Release; id-token: write -> MCP Registry login through OIDC.
   publish:
+    if: startsWith(github.ref, 'refs/tags/')
     needs: package
     runs-on: ubuntu-latest
     permissions:
