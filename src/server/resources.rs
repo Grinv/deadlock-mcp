@@ -103,11 +103,7 @@ fn target(uri: &str) -> Result<Target, ErrorData> {
 }
 
 /// A problem as an MCP error: a missing thing is `resource_not_found`, a bad URI `invalid_params`.
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to fit `map_err`"
-)]
-fn resource_error(p: Problem) -> ErrorData {
+fn resource_error(p: &Problem) -> ErrorData {
     match p.kind {
         Kind::NotFound => ErrorData::resource_not_found(p.message(), None),
         Kind::InvalidArgument => ErrorData::invalid_params(p.message(), None),
@@ -128,13 +124,13 @@ fn playable_by_name(cat: &Catalog) -> Vec<(u32, &String)> {
 
 pub(super) fn resource_text(uri: &str) -> Result<String, ErrorData> {
     match target(uri)? {
-        Target::Match(id) => to_json(&matches::summary(id).map_err(resource_error)?),
+        Target::Match(id) => to_json(&matches::summary(id).map_err(|p| resource_error(&p))?),
         Target::Hero(id) => {
-            let card = game::hero_card(id).map_err(resource_error)?;
+            let card = game::hero_card(id).map_err(|p| resource_error(&p))?;
             to_json(&card.ok_or_else(|| no_hero(uri))?)
         }
         Target::Heroes => {
-            let cat = catalog().map_err(resource_error)?;
+            let cat = catalog().map_err(|p| resource_error(&p))?;
             let heroes: Vec<HeroResource> = playable_by_name(&cat)
                 .into_iter()
                 .map(|(id, name)| {
@@ -153,7 +149,7 @@ pub(super) fn resource_text(uri: &str) -> Result<String, ErrorData> {
             to_json(&heroes)
         }
         Target::Items => {
-            let cat = catalog().map_err(resource_error)?;
+            let cat = catalog().map_err(|p| resource_error(&p))?;
             let mut items: Vec<ItemResource<'_>> = cat
                 .items
                 .values()
@@ -177,7 +173,7 @@ pub(super) fn resource_text(uri: &str) -> Result<String, ErrorData> {
 /// Hero ids for a typed name or id: name prefix matches, then name substring matches, then id
 /// prefix matches, each by name, at most 100.
 pub(super) fn hero_completions(typed: &str) -> Result<Vec<String>, ErrorData> {
-    let cat = catalog().map_err(resource_error)?;
+    let cat = catalog().map_err(|p| resource_error(&p))?;
     let q = typed.trim().to_lowercase();
     let mut found: Vec<(u8, &String, u32)> = cat
         .playable()
@@ -205,7 +201,7 @@ pub(super) fn hero_completions(typed: &str) -> Result<Vec<String>, ErrorData> {
 
 /// The static resources and every playable hero as its own resource, so clients can show names.
 pub(super) fn resources() -> Result<Vec<Resource>, ErrorData> {
-    let cat = catalog().map_err(resource_error)?;
+    let cat = catalog().map_err(|p| resource_error(&p))?;
     let heroes = playable_by_name(&cat).into_iter().map(|(id, name)| {
         let r = Resource::new(hero_uri(id), name.to_lowercase())
             .with_title(name.clone())

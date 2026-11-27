@@ -13,7 +13,7 @@ use crate::contracts::api;
 use crate::domain::format::strip_tags;
 use crate::domain::items::{Item, ItemKind};
 use crate::domain::map;
-use crate::http::{Source, optional};
+use crate::http::{Source, optional_part};
 use crate::problem::{Problem, Result};
 use crate::sources::api as source;
 
@@ -312,13 +312,13 @@ fn load(version: u32) -> Result<Catalog> {
         })
         .collect();
     // Place names are a nicety: without the map, positions stay bare.
-    let (landmarks, s) = optional(
+    let (landmarks, s) = optional_part(
         "map",
         source::map(version).map(|(data, s)| (map::landmarks(&data, &lanes), s)),
     );
     sources.push(s);
     // Award names are a nicety too: without them a match still reads.
-    let (accolades, s) = optional(
+    let (accolades, s) = optional_part(
         "accolades",
         source::accolades(version).map(|(list, s)| (accolades_by_id(list), s)),
     );

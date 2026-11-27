@@ -87,7 +87,7 @@ impl Source {
 
 /// The value of a part an answer can go without (`part` names it in the log). When its request
 /// failed, the failure is logged and the answer gets an empty value and a failed source.
-pub fn optional<T: Default>(
+pub fn optional_part<T: Default>(
     part: &str,
     fetched: crate::problem::Result<(T, Source)>,
 ) -> (T, Source) {
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn optional_parts_fail_softly() {
         let problem = Problem::new(Kind::Unreachable, "down").with_instance("https://api.test/m");
-        let (value, source): (Vec<u8>, Source) = optional("map", Err(problem));
+        let (value, source): (Vec<u8>, Source) = optional_part("map", Err(problem));
         assert_eq!(value, Vec::<u8>::new());
         assert_eq!(
             (source.url.as_str(), source.error.as_deref()),
@@ -576,7 +576,7 @@ mod tests {
             )
         );
         let ok = Source::failed(&Problem::not_found("x"));
-        let (value, _) = optional("map", Ok((vec![1_u8], ok)));
+        let (value, _) = optional_part("map", Ok((vec![1_u8], ok)));
         assert_eq!(value, [1]);
     }
 

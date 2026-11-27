@@ -12,7 +12,7 @@ use crate::contracts::api::{
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{date, mmss, plain};
 use crate::domain::outcome::{PlayerResult, player_result};
-use crate::http::{Source, optional};
+use crate::http::{Source, optional_part};
 use crate::problem::{Problem, Result};
 use crate::sources::api;
 use crate::tools::{Filters, answer_sources, hero_filter, id32, per, round, take, win_rate};
@@ -260,7 +260,7 @@ pub fn steam_names(ids: &[u32]) -> (HashMap<u32, String>, Option<Source>) {
             .collect();
         (names, source)
     });
-    let (names, source) = optional("steam names", fetched);
+    let (names, source) = optional_part("steam names", fetched);
     (names, Some(source))
 }
 
