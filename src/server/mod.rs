@@ -35,7 +35,7 @@ leaver's match is a loss even if their team won.
 - Every answer lists its `sources`. A `stale` one failed and an older copy was used: say so. One with an `error` failed \
 with nothing cached, so what it gives (Steam names, place names, awards) is missing, not empty.
 - A player's own stats: player_heroes, player_mates, player_enemies, player_deaths_map. The API has only the matches \
-someone sent it; ingest_status says whether the player sends theirs, else totals can be low.
+someone sent it; ingest_status says whether the player sends theirs, and if not, totals can be low.
 - The meta over all players: hero_stats, hero_items, hero_counters, hero_synergies, ability_order, builds, leaderboard; \
 performance_curve and stat_percentiles place one match against the average. Filter them to the player's rank \
 (min_rank/max_rank), say how many matches a rate rests on (small samples mislead), and check patches for a balance \
@@ -45,15 +45,16 @@ URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/L
 - Resources: hero cards at deadlock://hero/<hero id>, match summaries at deadlock://match/<match id>.";
 
 const REVIEW_STEPS: &str = "\
-1. Resolve the player with player_search if needed, then get the match id from player_overview. Note how experienced \
-they are: player_heroes (their matches on this hero), and whether the match is ranked (match_summary's mode).
-2. Get the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
-in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), and match_player for the player.
-3. For the player's lane, call match_player for both lane opponents and the lane partner: compare souls by source \
+1. Find the player with player_search if needed and take the match id from player_overview. Note how experienced \
+they are (player_heroes: their matches on this hero) and whether the match is ranked (match_summary's mode).
+2. Read the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
+in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), then match_player for \
+the player.
+3. In the player's lane, call match_player for both lane opponents and the lane partner and compare souls by source \
 (lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability \
-upgrades against ability_order. match_damage with until_minute 15: who hurt the player and who finished them, with what. \
-match_distance with until_minute 15: time spent near each lane opponent; call game_lookup for the lane \
-opponents' and the player's heroes and read that time against their abilities' ranges.
+upgrades against ability_order. Call match_damage with until_minute 15 for who hurt the player and who finished them, \
+with what, and match_distance with until_minute 15 for the time they spent near each lane opponent. Read that time \
+against the abilities' ranges from game_lookup for the opponents' and the player's heroes.
 4. Compare the player with the hero's meta, at their rank when the match is ranked (min_rank/max_rank as \
 player_overview names it), over all ranks otherwise: performance_curve (their net worth at each snapshot against the \
 average and its spread: when they fell behind, and which souls they lacked) and stat_percentiles (deaths, souls per \
@@ -65,8 +66,9 @@ of 43\"), not a bare number.
 habit. Items: what they bought when, next to what the enemies built and hero_items against this match's enemy heroes \
 (enemy_heroes).
 7. Before stating a conclusion, check it against a second figure that could contradict it: read assists against \
-kill_participation, and much damage taken means they were in the fights. Keep data and inference apart, give the match counts behind rates, and don't call a choice a mistake without knowing where it came from (ask \
-whether they followed a build from builds).
+kill_participation, and take much damage taken as a sign they were in the fights. Keep data and inference apart and \
+give the match counts behind rates. Don't call a choice a mistake until you know where it came from: ask whether \
+they followed a build from builds.
 8. End with two or three concrete things to do differently, each tied to a figure. Check mechanics on the wiki before \
 relying on them.";
 
