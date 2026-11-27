@@ -1,4 +1,4 @@
-# deadlock-mcp
+# Deadlock MCP
 
 An [MCP](https://modelcontextprotocol.io) server for Deadlock, Valve's hero shooter. It gives an AI
 assistant match and player statistics from the [Deadlock API](https://deadlock-api.com) and game
