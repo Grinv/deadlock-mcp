@@ -46,7 +46,7 @@ URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/L
 
 const REVIEW_STEPS: &str = "\
 1. Resolve the player with player_search if needed, then get the match id from player_overview. Note how experienced \
-they are: player_heroes (their matches on this hero), and whether the match is ranked (match_summary's mode and ranks).
+they are: player_heroes (their matches on this hero), and whether the match is ranked (match_summary's mode).
 2. Get the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
 in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), and match_player for the player.
 3. For the player's lane, call match_player for both lane opponents and the lane partner: compare souls by source \
@@ -180,7 +180,8 @@ fn standard_formats(schema: &rmcp::model::JsonObject) -> rmcp::model::JsonObject
 
 #[prompt_router]
 impl DeadlockServer {
-    /// Review a player's match: result, lane, where the souls came from, deaths and purchases.
+    /// Review a player's match: the whole match, the lane against both opponents (souls, damage,
+    /// distance), deaths, purchases, ability order and matchups.
     #[prompt(name = "review_match")]
     async fn review_match(
         &self,

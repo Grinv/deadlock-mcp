@@ -137,7 +137,7 @@ pub struct Overview {
     pub steam_name: Option<String>,
     /// The rank badge at the end of the player's latest ranked match the Deadlock API holds, e.g.
     /// "Seeker III"; the meta tools' `min_rank` and `max_rank` take it as it is. `None` when the API
-    /// holds no recent ranked match of the player: their rank is unknown, which is not the same as
+    /// reports no rank (badge 0, e.g. no recent ranked match): unknown, which is not the same as
     /// unranked, since the API only has the matches someone sent it.
     pub rank: Option<String>,
     /// Every match of the player's Steam match history.
@@ -208,7 +208,7 @@ fn overview_from(
     Overview {
         account_id,
         steam_name,
-        rank: rank.last_match.as_ref().map(|_| cat.rank(rank.badge)),
+        rank: (rank.badge > 0).then(|| cat.rank(rank.badge)),
         matches: u32::try_from(history.len()).unwrap_or(u32::MAX),
         wins,
         losses,
@@ -724,7 +724,8 @@ mod tests {
         );
     }
 
-    /// Without a ranked match in the API the badge is 0, which would read as "Obscurus".
+    /// The API reports badge 0 when no recent ranked match has a rank, which would read as
+    /// "Obscurus"; a match can be listed and still carry none.
     #[test]
     fn overview_rank_is_unknown_without_a_ranked_match() {
         let history: Vec<PlayerMatchHistoryEntry> =
@@ -732,7 +733,7 @@ mod tests {
                 .unwrap();
         let mut rank: RankResponse =
             serde_json::from_str(include_str!("../../contracts/fixtures/rank.json")).unwrap();
-        (rank.badge, rank.last_match) = (0, None);
+        rank.badge = 0;
         let cat = Catalog::test(&[(63, "H63"), (72, "H72")]);
         let o = overview_from(&cat, 1, 2, &history, &rank, None, Vec::new());
         assert_eq!(o.rank, None);

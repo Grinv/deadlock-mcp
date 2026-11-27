@@ -17,7 +17,9 @@ use crate::contracts::valve::{ECitadelLobbyTeam, ECitadelTeamObjective};
 use crate::domain::assets::{Lane, hex};
 use crate::domain::terms::team_name;
 
-/// About 50 m (39.37 units per meter): Guardians of one lane stand about 3800 units apart.
+/// World units per meter.
+pub const UNITS_PER_M: f64 = 39.37;
+/// About 50 m: Guardians of one lane stand about 3800 units apart.
 const NEAR: f64 = 2000.0;
 
 pub struct Landmark {
@@ -31,7 +33,7 @@ fn xy(v: &[f64]) -> Option<[f64; 2]> {
     Some([*v.first()?, *v.get(1)?])
 }
 
-fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
+pub fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
 

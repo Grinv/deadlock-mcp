@@ -67,8 +67,8 @@ directly, with the data already read for the assistant:
 - Numbers say what they measure: a counter's win rate says whose it is, and a new hero's pick rate
   counts only the days since its release.
 - A question is usually one call. "Who counters Haze at Ascendant?" is one `hero_counters` call; a
-  match review is `match_player`, `match_summary` and `match_lanes`, with the steps in the
-  `review_match` prompt. With SQL the assistant first has to learn the schema and its pitfalls, such
+  match review is a few `match_*` calls (summary, lanes, one player, damage, distance), with the
+  steps in the `review_match` prompt. With SQL the assistant first has to learn the schema and its pitfalls, such
   as voided matches and the rows that appear twice.
 - Answers hold what the question needs, in plain text and with no image links. `game_lookup` for
   Haze is 1,620 characters and names the abilities. The Deadlock API server's details of Haze also

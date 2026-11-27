@@ -6,12 +6,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::contracts::valve::c_msg_match_meta_data_contents::{MatchInfo, Players};
+use crate::contracts::valve::c_msg_match_meta_data_contents::{Deaths, MatchInfo, Players};
 use crate::contracts::valve::c_msg_match_player_damage_matrix::EStatType;
 use crate::contracts::valve::c_msg_match_player_paths_data::Path;
 use crate::contracts::valve::{CMsgMatchPlayerDamageMatrix, CMsgMatchPlayerPathsData};
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::mmss;
+use crate::domain::map::{self, UNITS_PER_M};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::tools::answer_sources;
@@ -21,8 +22,6 @@ use crate::tools::matches::{find_player, load};
 /// source. The groups are the game's (Scrap Grenade counts as `Bullet`), not damage types.
 const GROUPS: [&str; 5] = ["Bullet", "Ability", "Melee", "Misc", "UnknownAbility"];
 const CROWD_CONTROL: &str = "Citadel_Graph_CrowdControl_";
-/// World units per meter.
-const UNITS_PER_M: f64 = 39.37;
 const NEAR_M: [f64; 5] = [10.0, 20.0, 30.0, 45.0, 60.0];
 
 fn missing(match_id: u64, what: &str) -> Problem {
@@ -151,6 +150,8 @@ fn tallies(
             };
             let stat = EStatType::try_from(stat).ok();
             let group = GROUPS.contains(&raw.as_str());
+            let name =
+                (stat == Some(EStatType::KETypeDamage) && !group).then(|| source_name(cat, raw));
             for to in &source.damage_to_players {
                 let target = to.target_player_slot();
                 // Each series is cumulative and holds only its last samples: it starts at the first
@@ -181,7 +182,7 @@ fn tallies(
                         } else {
                             &mut tally.received_by_source
                         };
-                        *by.entry(source_name(cat, raw)).or_default() += value;
+                        *by.entry(name.clone().unwrap_or_default()).or_default() += value;
                     }
                     Some(EStatType::KETypeLethalDamage) if target == me => {
                         tally.killing_damage += value;
@@ -212,6 +213,9 @@ fn damage_from(
         .as_ref()
         .ok_or_else(|| missing(match_id, "damage data"))?;
     let times = &matrix.sample_time_s;
+    if times.is_empty() {
+        return Err(missing(match_id, "damage samples"));
+    }
     let limit = until_minute.map_or(u32::MAX, |m| m.saturating_mul(60));
     let k = times.iter().rposition(|&t| t <= limit).ok_or_else(|| {
         let first = times.first().copied().unwrap_or_default();
@@ -286,10 +290,9 @@ pub struct DistanceReport {
     /// The window, game time from and until.
     pub from: String,
     pub until: String,
-    /// Every other hero, enemies first, then by seconds within 30 m. Positions come once a second;
-    /// a player's path can hold more seconds than the match has, so each is stretched to the
-    /// match length. A stretched path can still be up to about 20 s off the times in death lists,
-    /// so read the seconds as rough shares of the window, not exact moments.
+    /// Every other hero with a path, enemies first, then by seconds within 30 m. Positions come
+    /// once a second; each path is lined up with game time on its player's deaths, so a few
+    /// seconds of error remain around them.
     pub players: Vec<Proximity>,
     pub sources: Vec<Source>,
 }
@@ -314,14 +317,68 @@ pub fn distance(
     )
 }
 
-/// The path sample at game second `t` of a match `duration` seconds long.
-// shortcut: stretches each path evenly over the match, which leaves a path with extra samples up
-// to ~20 s off mid-match (one with 137 extra over 40 min in match 143768397); anchor each path on
-// its deaths (health reaching 0 at `death_details` times) if that ever matters.
-fn sample_at(len: usize, duration: u32, t: u32) -> usize {
-    let last = u64::try_from(len.saturating_sub(1)).unwrap_or_default();
-    let duration = u64::from(duration.max(1));
-    usize::try_from((u64::from(t) * last + duration / 2) / duration).unwrap_or(usize::MAX)
+/// How a player's path lines up with game time: sample = `rate` × second + `shift`. A path can
+/// start late (a player who loaded late), stop early (one who disconnected) or hold more samples
+/// than the match has seconds, so it is anchored on the player's deaths: the first sample with
+/// health 0 after each death falls at that death's `game_time_s`.
+struct Clock {
+    rate: f64,
+    shift: f64,
+}
+
+impl Clock {
+    fn new(path: &Path, deaths: &[u32], duration: u32) -> Self {
+        let zeros = path
+            .health
+            .windows(2)
+            .zip(1u32..)
+            .filter(|(w, _)| w[0] > 0 && w[1] == 0)
+            .map(|(_, i)| f64::from(i));
+        let mut deaths = deaths.to_vec();
+        deaths.sort_unstable();
+        let pairs: Vec<(f64, f64)> = deaths.into_iter().map(f64::from).zip(zeros).collect();
+        let n = f64::from(u32::try_from(pairs.len()).unwrap_or(u32::MAX));
+        let mean = |f: fn(&(f64, f64)) -> f64| pairs.iter().map(f).sum::<f64>() / n;
+        match pairs.len() {
+            // No deaths to anchor on: spread the path evenly over the match.
+            0 => {
+                let samples = u32::try_from(path.health.len().saturating_sub(1)).unwrap_or(0);
+                Self {
+                    rate: f64::from(samples) / f64::from(duration.max(1)),
+                    shift: 0.0,
+                }
+            }
+            1 => Self {
+                rate: 1.0,
+                shift: pairs[0].1 - pairs[0].0,
+            },
+            // Least squares over the deaths.
+            _ => {
+                let (t, s) = (mean(|p| p.0), mean(|p| p.1));
+                let spread: f64 = pairs.iter().map(|p| (p.0 - t).powi(2)).sum();
+                let rate = if spread > 0.0 {
+                    pairs.iter().map(|p| (p.0 - t) * (p.1 - s)).sum::<f64>() / spread
+                } else {
+                    1.0
+                };
+                Self {
+                    rate,
+                    shift: s - rate * t,
+                }
+            }
+        }
+    }
+
+    /// The sample at game second `t`, `None` outside the path.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a whole number checked to lie in 0..len"
+    )]
+    fn sample(&self, t: u32, len: usize) -> Option<usize> {
+        let i = (self.rate * f64::from(t) + self.shift).round();
+        (i >= 0.0 && i < f64::from(u32::try_from(len).ok()?)).then_some(i as usize)
+    }
 }
 
 /// The world position (x, y) of sample `i`, or `None` while dead: the path then holds (0, 0).
@@ -369,15 +426,25 @@ fn distance_from(
             .iter()
             .find(|x| x.player_slot() == q.player_slot())
     };
-    let mine = path_of(p).ok_or_else(|| missing(match_id, "path of this player"))?;
     let duration = info.duration_s();
+    let clock = |q: &Players, path: &Path| {
+        let deaths: Vec<u32> = q.death_details.iter().map(Deaths::game_time_s).collect();
+        Clock::new(path, &deaths, duration)
+    };
+    let mine = path_of(p).ok_or_else(|| missing(match_id, "path of this player"))?;
+    let my_clock = clock(p, mine);
     let from = from_minute.saturating_mul(60);
     let until = until_minute.map_or(duration, |m| m.saturating_mul(60).min(duration));
-    if from >= until {
+    if from >= duration {
         return Err(Problem::invalid_argument(format!(
-            "the window is empty: match {match_id} lasted {}, and from_minute must be before until_minute",
+            "match {match_id} lasted {}: from_minute must be before its end",
             mmss(u64::from(duration))
         )));
+    }
+    if from >= until {
+        return Err(Problem::invalid_argument(
+            "the window is empty: from_minute must be before until_minute",
+        ));
     }
     let mut players: Vec<Proximity> = info
         .players
@@ -385,15 +452,17 @@ fn distance_from(
         .filter(|q| q.player_slot() != p.player_slot())
         .filter_map(|q| {
             let theirs = path_of(q)?;
+            let their_clock = clock(q, theirs);
             let (mut both, mut near) = (0, [0; NEAR_M.len()]);
             for t in from..until {
-                let at =
-                    |path: &Path| position(paths, path, sample_at(path.x_pos.len(), duration, t));
-                let (Some(a), Some(b)) = (at(mine), at(theirs)) else {
+                let at = |path: &Path, clock: &Clock| {
+                    position(paths, path, clock.sample(t, path.health.len())?)
+                };
+                let (Some(a), Some(b)) = (at(mine, &my_clock), at(theirs, &their_clock)) else {
                     continue;
                 };
                 both += 1;
-                let m = (a[0] - b[0]).hypot(a[1] - b[1]) / UNITS_PER_M;
+                let m = map::distance(a, b) / UNITS_PER_M;
                 for (count, limit) in near.iter_mut().zip(NEAR_M) {
                     *count += u32::from(m <= limit);
                 }
@@ -580,16 +649,64 @@ mod tests {
         assert_eq!(position(paths, path, dead), None);
         let at = position(paths, path, dead - 1).unwrap();
         let death = p.death_details[0].death_pos.unwrap();
-        let m = (at[0] - f64::from(death.x())).hypot(at[1] - f64::from(death.y())) / UNITS_PER_M;
+        let m = map::distance(at, [f64::from(death.x()), f64::from(death.y())]) / UNITS_PER_M;
         assert!(m < 15.0, "{m} m");
     }
 
+    /// A path whose health drops to 0 at these samples.
+    fn path_dying_at(len: usize, zeros: &[usize]) -> Path {
+        let mut health = vec![100; len];
+        for &z in zeros {
+            health[z] = 0;
+        }
+        Path {
+            health,
+            ..Path::default()
+        }
+    }
+
     #[test]
-    fn paths_are_stretched_to_the_match() {
-        // Most paths hold one sample per second of the match.
-        assert_eq!(sample_at(2394, 2393, 1500), 1500);
-        // H63's path in this match holds 2530 samples; his death at 38:06 shows at sample 2417.
-        assert!(sample_at(2530, 2393, 2286).abs_diff(2417) <= 2);
+    fn clock_follows_the_deaths() {
+        // Running slow (more samples than seconds), starting late and stopping early, as seen in
+        // real matches: each death lands on its sample, and seconds off the path have none.
+        let slow = path_dying_at(1431, &[163, 795, 1393]);
+        let c = Clock::new(&slow, &[162, 782, 1366], 1403);
+        // A straight line through three deaths: each within a second.
+        for (t, at) in [(162, 163), (782, 795), (1366, 1393)] {
+            assert!(c.sample(t, 1431).unwrap().abs_diff(at) <= 1, "{t}");
+        }
+        let late = path_dying_at(1746, &[256, 1415]);
+        let c = Clock::new(&late, &[340, 1499], 2330);
+        assert_eq!((c.sample(340, 1746), c.sample(10, 1746)), (Some(256), None));
+        let early = path_dying_at(917, &[300]);
+        let c = Clock::new(&early, &[299], 1635);
+        assert_eq!((c.sample(299, 917), c.sample(1200, 917)), (Some(300), None));
+        // Without deaths the path is spread over the match.
+        let c = Clock::new(&path_dying_at(2531, &[]), &[], 2530);
+        assert_eq!(c.sample(1500, 2531), Some(1500));
+    }
+
+    /// H79's path in the fixture's match runs ahead of the game clock (2440 samples over 39:53);
+    /// the fixture keeps its first 15 minutes, with one death to anchor on.
+    #[test]
+    fn fixture_clock_lands_on_deaths() {
+        let info = fixture();
+        let paths = info.match_paths.as_ref().unwrap();
+        let p = info.players.iter().find(|p| p.player_slot() == 12).unwrap();
+        let path = paths.paths.iter().find(|x| x.player_slot() == 12).unwrap();
+        let deaths: Vec<u32> = p.death_details.iter().map(Deaths::game_time_s).collect();
+        let c = Clock::new(path, &deaths, info.duration_s());
+        let zeros: Vec<usize> = (1..path.health.len())
+            .filter(|&i| path.health[i - 1] > 0 && path.health[i] == 0)
+            .collect();
+        assert_eq!(zeros.len(), 1);
+        for (&t, &z) in deaths.iter().zip(&zeros) {
+            let at = c.sample(t, path.health.len()).unwrap();
+            assert!(
+                at.abs_diff(z) <= 2,
+                "death at {t}: sample {at}, health 0 at {z}"
+            );
+        }
     }
 
     #[test]
@@ -624,20 +741,24 @@ mod tests {
         assert_eq!(
             got(&lane),
             [
-                ("H79".to_owned(), false, 820, [32, 116, 226, 313, 353]),
-                ("H20".to_owned(), true, 853, [114, 267, 357, 421, 478]),
+                ("H79".to_owned(), false, 806, [35, 103, 197, 330, 382]),
+                ("H20".to_owned(), true, 853, [96, 235, 351, 420, 485]),
             ]
         );
         assert_eq!(
             got(&run(5, Some(10))),
             [
-                ("H79".to_owned(), false, 262, [3, 18, 44, 63, 80]),
-                ("H20".to_owned(), true, 262, [21, 55, 76, 102, 132]),
+                ("H79".to_owned(), false, 262, [15, 30, 49, 92, 122]),
+                ("H20".to_owned(), true, 262, [17, 46, 73, 106, 136]),
             ]
         );
-        let err = distance_from(&cat(), MATCH, ME, &info, 15, Some(15), Vec::new())
-            .err()
-            .unwrap();
-        assert!(err.message().contains("the window is empty"));
+        let err = |from, until| {
+            distance_from(&cat(), MATCH, ME, &info, from, until, Vec::new())
+                .err()
+                .unwrap()
+                .message()
+        };
+        assert!(err(5, Some(5)).contains("the window is empty"));
+        assert!(err(15, None).contains("before its end"));
     }
 }

@@ -185,17 +185,15 @@ fn summary_from(
                 .collect(),
         })
         .collect();
-    let mut destroyed: Vec<_> = info
-        .objectives
-        .iter()
-        .filter(|o| o.destroyed_time_s() > 0)
-        .collect();
+    let mut destroyed: Vec<_> = info.objectives.iter().collect();
     destroyed.sort_by_key(|o| o.destroyed_time_s());
     let objectives = destroyed
         .into_iter()
-        .map(|o| DestroyedObjective {
-            name: cat.objective(o.team(), o.team_objective_id()),
-            destroyed_at: mmss(u64::from(o.destroyed_time_s())),
+        .filter_map(|o| {
+            Some(DestroyedObjective {
+                name: cat.objective(o.team(), o.team_objective_id()),
+                destroyed_at: happened_at(o.destroyed_time_s())?,
+            })
         })
         .collect();
     Summary {

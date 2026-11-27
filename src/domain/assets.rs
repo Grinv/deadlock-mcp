@@ -87,8 +87,8 @@ impl Catalog {
             .map(|(&id, name)| (id, name))
     }
 
-    /// A hero's four abilities (signature and ultimate) by name; melee and the innate movement
-    /// abilities are left out. Some ultimates have no tooltip text, only their upgrades.
+    /// A hero's signature and ultimate abilities by name (four for released heroes); melee and the
+    /// innate movement abilities are left out. Some ultimates have no tooltip text, only upgrades.
     pub fn abilities(&self, hero: u32) -> Vec<&Item> {
         let mut abilities: Vec<&Item> = self
             .items
