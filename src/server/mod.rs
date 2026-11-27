@@ -20,7 +20,7 @@ use rmcp::{
     ErrorData, RoleServer, ServerHandler, prompt, prompt_handler, prompt_router, tool_handler,
 };
 use schemars::JsonSchema;
-use schemars::transform::{RecursiveTransform, Transform as _};
+use schemars::transform::{RestrictFormats, Transform as _};
 use serde::Deserialize;
 
 use crate::problem::{Kind, Problem};
@@ -144,39 +144,22 @@ impl DeadlockServer {
             Self::player_tools() + Self::match_tools() + Self::meta_tools() + Self::game_tools();
         for route in router.map.values_mut() {
             let tool = &mut route.attr;
-            tool.input_schema = std::sync::Arc::new(portable_schema(&tool.input_schema));
+            tool.input_schema = std::sync::Arc::new(standard_formats(&tool.input_schema));
             tool.output_schema = tool
                 .output_schema
                 .as_deref()
-                .map(|s| std::sync::Arc::new(portable_schema(s)));
+                .map(|s| std::sync::Arc::new(standard_formats(s)));
         }
         router
     }
 }
 
-/// `schema` with the `format`s schemars names after Rust's unsigned integers (`uint8` to `uint64`,
-/// and `uint` for `usize`) in standard words. Neither JSON Schema nor `OpenAPI` defines them, so
-/// clients can't use them and validators warn. A `uintN` of up to 32 bits becomes its `maximum`
-/// unless the schema has a narrower one; larger ones exceed what JSON numbers hold exactly and keep
-/// `minimum: 0`.
-fn portable_schema(schema: &rmcp::model::JsonObject) -> rmcp::model::JsonObject {
-    fn unsigned_as_bounds(schema: &mut schemars::Schema) {
-        let bits = schema
-            .get("format")
-            .and_then(serde_json::Value::as_str)
-            .and_then(|f| f.strip_prefix("uint"))
-            .map(|bits| bits.parse::<u32>().ok());
-        let Some(bits) = bits else {
-            return;
-        };
-        schema.remove("format");
-        if let (Some(bits @ 1..=32), Some(map)) = (bits, schema.as_object_mut()) {
-            map.entry("maximum")
-                .or_insert_with(|| ((1_u64 << bits) - 1).into());
-        }
-    }
+/// `schema` with only the `format`s its JSON Schema version defines. schemars also writes Rust's
+/// integer sizes (`uint32`, `int64`, `double`...), which no standard defines, so clients can't use
+/// them and validators warn; the bounds that matter are in `minimum`/`maximum`.
+fn standard_formats(schema: &rmcp::model::JsonObject) -> rmcp::model::JsonObject {
     let mut schema = schemars::Schema::from(schema.clone());
-    RecursiveTransform(unsigned_as_bounds).transform(&mut schema);
+    RestrictFormats::default().transform(&mut schema);
     schema.as_object().cloned().unwrap_or_default()
 }
 
@@ -290,43 +273,35 @@ mod tests {
     #[test]
     fn schemas_use_standard_formats() {
         let schema = serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "properties": {
                 "id": {"type": "integer", "format": "uint32", "minimum": 0},
-                "days": {"type": "integer", "format": "uint32", "minimum": 1, "maximum": 365},
-                "tier": {"type": ["integer", "null"], "format": "uint8", "minimum": 0, "maximum": 255},
-                "at": {"type": "integer", "format": "uint64", "minimum": 0},
-                "count": {"type": "integer", "format": "uint", "minimum": 0},
-                "net_worth": {"type": "integer", "format": "int64"},
-                "rate": {"type": "number", "format": "double"}
+                "when": {"type": "string", "format": "date-time"}
             },
-            "$defs": {"Row": {"anyOf": [{"type": "integer", "format": "uint16"}, {"type": "null"}]}},
+            "$defs": {"Row": {"anyOf": [{"type": "number", "format": "double"}, {"type": "null"}]}},
             "examples": [{"format": "uint32"}]
         });
         let serde_json::Value::Object(schema) = schema else {
             unreachable!()
         };
+        // Rust's sizes go, standard formats and data inside the schema stay.
         assert_eq!(
-            serde_json::Value::Object(portable_schema(&schema)),
+            serde_json::Value::Object(standard_formats(&schema)),
             serde_json::json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                    "id": {"type": "integer", "minimum": 0, "maximum": 4_294_967_295_u64},
-                    "days": {"type": "integer", "minimum": 1, "maximum": 365},
-                    "tier": {"type": ["integer", "null"], "minimum": 0, "maximum": 255},
-                    "at": {"type": "integer", "minimum": 0},
-                    "count": {"type": "integer", "minimum": 0},
-                    "net_worth": {"type": "integer", "format": "int64"},
-                    "rate": {"type": "number", "format": "double"}
+                    "id": {"type": "integer", "minimum": 0},
+                    "when": {"type": "string", "format": "date-time"}
                 },
-                "$defs": {"Row": {"anyOf": [{"type": "integer", "maximum": 65535}, {"type": "null"}]}},
-                // Data, not a schema: left as it is.
+                "$defs": {"Row": {"anyOf": [{"type": "number"}, {"type": "null"}]}},
                 "examples": [{"format": "uint32"}]
             })
         );
-        // Every published schema is left with standard formats only.
+        // No published schema keeps a format: none of ours is a standard one.
         let published = serde_json::to_string(&DeadlockServer::tools().list_all()).unwrap();
-        assert!(!published.contains("\"uint"), "a uint format is left");
+        assert!(!published.contains("\"format\""), "a format is left");
     }
 
     /// The README's tool table lists every tool.
