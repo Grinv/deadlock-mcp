@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::contracts::api::FeedItem;
 use crate::domain::assets::catalog;
-use crate::domain::format::{bounded, plain, strip_tags};
+use crate::domain::format::{bounded, clip, plain, strip_tags};
 use crate::domain::items::{self, Item, ItemKind};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
@@ -112,7 +112,10 @@ pub fn lookup(query: &str) -> Result<Lookup> {
                 .collect(),
             description: None,
             role: info.and_then(|h| h.role.clone()),
-            lore: info.and_then(|h| items::text(&[&h.lore])),
+            // Already plain text: cleaning it again would turn its line breaks into spaces.
+            lore: info
+                .and_then(|h| h.lore.as_deref())
+                .map(|l| clip(l, items::MAX_TEXT)),
             upgrades: Vec::new(),
             properties: Vec::new(),
         }

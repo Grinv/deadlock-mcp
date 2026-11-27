@@ -83,6 +83,15 @@ pub fn bounded(s: &str, max: usize) -> (String, bool) {
     (s.chars().take(max).collect(), s.chars().nth(max).is_some())
 }
 
+/// `s` cut at `max` characters, with `…` when something was cut.
+pub fn clip(s: &str, max: usize) -> String {
+    let (mut t, cut) = bounded(s, max);
+    if cut {
+        t.push('…');
+    }
+    t
+}
+
 /// `YYYY-MM-DD` (UTC) for a unix timestamp.
 pub fn date(unix: i64) -> String {
     // Howard Hinnant's days-from-civil, inverted.
@@ -121,6 +130,8 @@ mod tests {
         );
         assert_eq!(bounded("abc", 2), ("ab".to_owned(), true));
         assert_eq!(bounded("ab", 2), ("ab".to_owned(), false));
+        assert_eq!(clip("a\nbc", 3), "a\nb…");
+        assert_eq!(clip("ab", 2), "ab");
     }
 
     #[test]

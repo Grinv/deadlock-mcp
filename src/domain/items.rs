@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::contracts::api;
-use crate::domain::format::{bounded, strip_tags};
+use crate::domain::format::{clip, strip_tags};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -35,22 +35,19 @@ pub struct Item {
 }
 
 /// Longer tooltips are cut here.
-const MAX_TEXT: usize = 600;
+pub(crate) const MAX_TEXT: usize = 600;
 /// At most this many properties per item.
 const MAX_PROPERTIES: usize = 12;
 
 /// Tooltip markup as plain text, cut at `MAX_TEXT` characters.
-pub(crate) fn text(parts: &[&Option<String>]) -> Option<String> {
+fn text(parts: &[&Option<String>]) -> Option<String> {
     let joined: Vec<String> = parts
         .iter()
         .filter_map(|p| p.as_deref())
         .map(strip_tags)
         .filter(|t| !t.is_empty())
         .collect();
-    let (mut t, cut) = bounded(&joined.join("\n"), MAX_TEXT);
-    if cut {
-        t.push('…');
-    }
+    let t = clip(&joined.join("\n"), MAX_TEXT);
     (!t.is_empty()).then_some(t)
 }
 

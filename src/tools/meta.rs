@@ -29,6 +29,15 @@ fn rate(wins: i64, matches: i64) -> f64 {
     win_rate(wins, matches).unwrap_or(0.0)
 }
 
+/// Heroes per match: a sum of the heroes' `matches` counts every match this many times.
+const HEROES_PER_MATCH: i64 = 12;
+
+/// The share of matches a hero was in, counting only the days since its first match in the
+/// window, so a hero released inside the window is not divided by matches it could not be in.
+fn pick_rate(matches: i64, matches_since_first_day: i64) -> f64 {
+    win_rate(matches * HEROES_PER_MATCH, matches_since_first_day).unwrap_or_default()
+}
+
 fn sources(source: Source, cat: &Catalog) -> Vec<Source> {
     std::iter::once(source).chain(cat.stale_sources()).collect()
 }
@@ -49,7 +58,7 @@ pub struct HeroRow {
     pub matches: i64,
     /// Wins over matches, 0..1.
     pub win_rate: Option<f64>,
-    /// Share of all matches the hero was in, 0..1.
+    /// Share of matches the hero was in since its first match in the window, 0..1.
     pub pick_rate: f64,
     pub kills_per_match: f64,
     pub deaths_per_match: f64,
@@ -82,7 +91,7 @@ pub fn hero_stats(
 ) -> Result<HeroStats> {
     let cat = catalog()?;
     let (rows, source) = api::hero_stats(&filters.query())?;
-    let matches = rows.iter().map(|h| h.matches).sum::<i64>() / 12;
+    let matches = rows.iter().map(|h| h.matches).sum::<i64>() / HEROES_PER_MATCH;
     let mut heroes: Vec<_> = rows
         .iter()
         .filter(|h| h.matches >= i64::from(min_matches))
@@ -90,7 +99,7 @@ pub fn hero_stats(
             hero: cat.hero(id32(h.hero_id.into())),
             matches: h.matches,
             win_rate: win_rate(h.wins, h.matches),
-            pick_rate: win_rate(h.matches, matches).unwrap_or_default(),
+            pick_rate: pick_rate(h.matches, h.bucket_matches_since_first_day),
             kills_per_match: per(h.total_kills, h.matches),
             deaths_per_match: per(h.total_deaths, h.matches),
             assists_per_match: per(h.total_assists, h.matches),
@@ -103,7 +112,7 @@ pub fn hero_stats(
                 .unwrap_or_default()
                 .total_cmp(&a.win_rate.unwrap_or_default())
         }),
-        HeroSort::PickRate => heroes.sort_by_key(|h| Reverse(h.matches)),
+        HeroSort::PickRate => heroes.sort_by(|a, b| b.pick_rate.total_cmp(&a.pick_rate)),
     }
     heroes.truncate(take(limit));
     Ok(HeroStats {
@@ -206,25 +215,35 @@ pub struct Pairing {
     pub win_rate: Option<f64>,
 }
 
-/// `(other hero, wins, matches)` rows as the best and the worst `limit` pairings.
-fn best_and_worst(
-    cat: &Catalog,
-    mut rows: Vec<(u32, i64, i64)>,
-    limit: u32,
-) -> (Vec<Pairing>, Vec<Pairing>) {
+/// `(other hero, wins, matches)`.
+type PairRow = (u32, i64, i64);
+
+/// Rows as the best and the worst `limit` pairings.
+fn best_and_worst(cat: &Catalog, rows: Vec<PairRow>, limit: u32) -> (Vec<Pairing>, Vec<Pairing>) {
+    let (best, worst) = split_best_worst(rows, take(limit));
+    let pairing = |&(h, wins, matches): &PairRow| Pairing {
+        hero: cat.hero(h),
+        matches,
+        win_rate: win_rate(wins, matches),
+    };
+    (
+        best.iter().map(pairing).collect(),
+        worst.iter().map(pairing).collect(),
+    )
+}
+
+/// The `n` rows with the best win rate and the `n` with the worst, worst first. With fewer than
+/// `2 * n` rows the better half is best and the rest worst, so no row is in both.
+fn split_best_worst(mut rows: Vec<PairRow>, n: usize) -> (Vec<PairRow>, Vec<PairRow>) {
     rows.sort_by(|a, b| {
         rate(b.1, b.2)
             .total_cmp(&rate(a.1, a.2))
             .then(a.0.cmp(&b.0))
     });
-    let pairing = |&(h, wins, matches): &(u32, i64, i64)| Pairing {
-        hero: cat.hero(h),
-        matches,
-        win_rate: win_rate(wins, matches),
-    };
-    let best = rows.iter().take(take(limit)).map(pairing).collect();
-    let worst = rows.iter().rev().take(take(limit)).map(pairing).collect();
-    (best, worst)
+    let best = n.min(rows.len().div_ceil(2));
+    let worst = rows[best..].iter().rev().take(n).copied().collect();
+    rows.truncate(best);
+    (rows, worst)
 }
 
 fn pair_query(filters: &Filters, min_matches: u32, same_lane: bool) -> String {
@@ -753,4 +772,35 @@ pub fn stat_percentiles(
         metrics,
         sources: sources(source, &cat),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A hero in 10 of the 100 matches since its release has a pick rate of 0.1, whatever came
+    /// before it in the window.
+    #[test]
+    fn pick_rate_counts_from_the_first_day() {
+        assert!((pick_rate(10, 100 * HEROES_PER_MATCH) - 0.1).abs() < 1e-9);
+        assert!(pick_rate(0, 0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn best_and_worst_never_share_a_row() {
+        // (hero, wins, matches): win rates 0.9, 0.7, 0.5, 0.3, 0.1.
+        let rows = vec![(3, 5, 10), (1, 9, 10), (5, 1, 10), (2, 7, 10), (4, 3, 10)];
+        assert_eq!(
+            split_best_worst(rows.clone(), 2),
+            (vec![(1, 9, 10), (2, 7, 10)], vec![(5, 1, 10), (4, 3, 10)])
+        );
+        // Fewer than 2 * n rows: split in halves instead of listing a hero twice.
+        assert_eq!(
+            split_best_worst(rows, 10),
+            (
+                vec![(1, 9, 10), (2, 7, 10), (3, 5, 10)],
+                vec![(5, 1, 10), (4, 3, 10)]
+            )
+        );
+    }
 }
