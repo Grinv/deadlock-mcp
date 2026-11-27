@@ -8,7 +8,10 @@ use std::fmt::Write as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::contracts::api::{MetricValues, PlayerStatsMetricsKey as Metric};
+use crate::contracts::api::{
+    AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats, ItemStats,
+    MetricValues, PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric,
+};
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{bounded, date, mmss, plain};
@@ -80,6 +83,25 @@ pub fn hero_stats(
 ) -> Result<HeroStats> {
     let cat = catalog()?;
     let (rows, source) = api::hero_stats(&filters.query())?;
+    let sources = sources(source, &cat);
+    Ok(hero_stats_from(
+        &cat,
+        min_matches,
+        sort,
+        limit,
+        &rows,
+        sources,
+    ))
+}
+
+fn hero_stats_from(
+    cat: &Catalog,
+    min_matches: u32,
+    sort: HeroSort,
+    limit: u32,
+    rows: &[AnalyticsHeroStats],
+    sources: Vec<Source>,
+) -> HeroStats {
     let matches = rows.iter().map(|h| h.matches).sum::<i64>() / HEROES_PER_MATCH;
     let mut heroes: Vec<_> = rows
         .iter()
@@ -104,11 +126,11 @@ pub fn hero_stats(
         HeroSort::PickRate => heroes.sort_by(|a, b| b.pick_rate.total_cmp(&a.pick_rate)),
     }
     heroes.truncate(take(limit));
-    Ok(HeroStats {
+    HeroStats {
         matches,
         heroes,
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -159,6 +181,20 @@ pub fn hero_items(
         let _ = write!(query, "&enemy_hero_ids={}", ids.join(","));
     }
     let (rows, source) = api::item_stats(&query)?;
+    let sources = sources(source, &cat);
+    Ok(hero_items_from(
+        &cat, hero_id, &enemies, limit, &rows, sources,
+    ))
+}
+
+fn hero_items_from(
+    cat: &Catalog,
+    hero_id: u32,
+    enemies: &[u32],
+    limit: u32,
+    rows: &[ItemStats],
+    sources: Vec<Source>,
+) -> HeroItems {
     let mut items: Vec<_> = rows
         .iter()
         .filter_map(|r| {
@@ -170,7 +206,7 @@ pub fn hero_items(
         })
         .collect();
     items.sort_by(|a, b| rate(b.0.wins, b.0.matches).total_cmp(&rate(a.0.wins, a.0.matches)));
-    Ok(HeroItems {
+    HeroItems {
         hero: cat.hero(hero_id),
         enemy_heroes: enemies.iter().map(|&h| cat.hero(h)).collect(),
         items: items
@@ -191,8 +227,8 @@ pub fn hero_items(
                 avg_buy_time: mmss(r.avg_buy_time_s.max(0.0) as u64),
             })
             .collect(),
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 /// Another hero and how matches with or against it went for the hero asked about.
@@ -264,19 +300,33 @@ pub fn hero_counters(
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let (rows, source) = api::hero_counter_stats(&pair_query(filters, min_matches, same_lane))?;
+    let sources = sources(source, &cat);
+    Ok(hero_counters_from(
+        &cat, hero_id, same_lane, limit, &rows, sources,
+    ))
+}
+
+fn hero_counters_from(
+    cat: &Catalog,
+    hero_id: u32,
+    same_lane: bool,
+    limit: u32,
+    rows: &[HeroCounterStats],
+    sources: Vec<Source>,
+) -> Counters {
     let rows = rows
         .iter()
         .filter(|r| id32(r.hero_id.into()) == hero_id)
         .map(|r| (id32(r.enemy_hero_id.into()), r.wins, r.matches_played))
         .collect();
-    let (best_against, worst_against) = best_and_worst(&cat, rows, limit);
-    Ok(Counters {
+    let (best_against, worst_against) = best_and_worst(cat, rows, limit);
+    Counters {
         hero: cat.hero(hero_id),
         same_lane,
         best_against,
         worst_against,
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -301,6 +351,20 @@ pub fn hero_synergies(
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let (rows, source) = api::hero_synergy_stats(&pair_query(filters, min_matches, same_lane))?;
+    let sources = sources(source, &cat);
+    Ok(hero_synergies_from(
+        &cat, hero_id, same_lane, limit, &rows, sources,
+    ))
+}
+
+fn hero_synergies_from(
+    cat: &Catalog,
+    hero_id: u32,
+    same_lane: bool,
+    limit: u32,
+    rows: &[HeroSynergyStats],
+    sources: Vec<Source>,
+) -> Synergies {
     // Each pair comes once, in either order.
     let rows = rows
         .iter()
@@ -316,14 +380,14 @@ pub fn hero_synergies(
             Some((mate, r.wins, r.matches_played))
         })
         .collect();
-    let (best_with, worst_with) = best_and_worst(&cat, rows, limit);
-    Ok(Synergies {
+    let (best_with, worst_with) = best_and_worst(cat, rows, limit);
+    Synergies {
         hero: cat.hero(hero_id),
         same_lane,
         best_with,
         worst_with,
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -354,7 +418,18 @@ pub fn ability_order(
     let cat = catalog()?;
     let hero_id = cat.find_hero(hero)?;
     let query = format!("&min_matches={min_matches}{}", filters.query());
-    let (mut rows, source) = api::ability_order_stats(hero_id, &query)?;
+    let (rows, source) = api::ability_order_stats(hero_id, &query)?;
+    let sources = sources(source, &cat);
+    Ok(ability_order_from(&cat, hero_id, limit, rows, sources))
+}
+
+fn ability_order_from(
+    cat: &Catalog,
+    hero_id: u32,
+    limit: u32,
+    mut rows: Vec<AnalyticsAbilityOrderStats>,
+    sources: Vec<Source>,
+) -> AbilityOrders {
     let order = |r: &crate::contracts::api::AnalyticsAbilityOrderStats| Order {
         abilities: r
             .abilities
@@ -371,12 +446,12 @@ pub fn ability_order(
     let most_common = rows.iter().take(take(limit)).map(order).collect();
     rows.sort_by(|a, b| rate(b.wins, b.matches).total_cmp(&rate(a.wins, a.matches)));
     let best = rows.iter().take(take(limit)).map(order).collect();
-    Ok(AbilityOrders {
+    AbilityOrders {
         hero: cat.hero(hero_id),
         most_common,
         best,
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -573,6 +648,14 @@ pub fn performance_curve(hero: Option<&str>, filters: &Filters) -> Result<Perfor
     let cat = catalog()?;
     let (hero_query, hero) = hero_filter(&cat, hero)?;
     let (rows, source) = api::performance_curve(&format!("{hero_query}{}", filters.query()))?;
+    Ok(performance_curve_from(hero, &rows, sources(source, &cat)))
+}
+
+fn performance_curve_from(
+    hero: Option<String>,
+    rows: &[PlayerPerformanceCurvePoint],
+    sources: Vec<Source>,
+) -> PerformanceCurve {
     let most = rows.iter().map(|p| p.samples).max().unwrap_or_default();
     let points = rows
         .iter()
@@ -623,11 +706,11 @@ pub fn performance_curve(hero: Option<&str>, filters: &Filters) -> Result<Perfor
             }
         })
         .collect();
-    Ok(PerformanceCurve {
+    PerformanceCurve {
         hero,
         points,
-        sources: sources(source, &cat),
-    })
+        sources,
+    }
 }
 
 /// The metrics `stat_percentiles` gives when none are asked for.
@@ -773,6 +856,65 @@ mod tests {
     fn pick_rate_counts_from_the_first_day() {
         assert!((pick_rate(10, 100 * HEROES_PER_MATCH) - 0.1).abs() < 1e-9);
         assert!(pick_rate(0, 0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn synergies_take_either_side_of_a_pair() {
+        let mut rows: Vec<HeroSynergyStats> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/hero_synergy_stats.json"
+        ))
+        .unwrap();
+        // The fixture's pairs (1, 2) and (1, 3); turn the second around and add one without hero 1.
+        (rows[1].hero_id1, rows[1].hero_id2) = (3, 1);
+        let mut other = rows[0].clone();
+        (other.hero_id1, other.hero_id2) = (2, 3);
+        rows.push(other);
+        let cat = Catalog::test(&[(1, "H1"), (2, "H2"), (3, "H3")]);
+        let s = hero_synergies_from(&cat, 1, false, 1, &rows, Vec::new());
+        assert_eq!(
+            serde_json::to_value(&s).unwrap(),
+            serde_json::json!({
+                "hero": "H1",
+                "same_lane": false,
+                "best_with": [{"hero": "H2", "matches": 67595, "win_rate": 0.541}],
+                "worst_with": [{"hero": "H3", "matches": 63618, "win_rate": 0.474}],
+                "sources": [],
+            })
+        );
+    }
+
+    #[test]
+    fn performance_curve_leaves_out_rare_times() {
+        let mut rows: Vec<PlayerPerformanceCurvePoint> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/performance_curve.json"
+        ))
+        .unwrap();
+        let at = |rows: &[PlayerPerformanceCurvePoint]| {
+            performance_curve_from(None, rows, Vec::new())
+                .points
+                .into_iter()
+                .map(|p| p.at)
+                .collect::<Vec<_>>()
+        };
+        // 5% of the most samples (39769) is 1988.45.
+        rows[1].samples = 1989;
+        assert_eq!(at(&rows), ["3:00", "6:00"]);
+        rows[1].samples = 1988;
+        assert_eq!(at(&rows), ["3:00"]);
+
+        let curve = performance_curve_from(Some("H1".to_owned()), &rows, Vec::new());
+        assert_eq!(curve.hero.as_deref(), Some("H1"));
+        // Orbs added to their source, under one soul left out, largest first.
+        assert_eq!(
+            serde_json::to_value(&curve.points[0].souls_by_source).unwrap(),
+            serde_json::json!([
+                {"source": "lane troopers", "souls": 1008.0},
+                {"source": "hero kills", "souls": 118.0},
+                {"source": "jungle (neutrals, incl. Sinner's Sacrifice)", "souls": 50.0},
+                {"source": "assists", "souls": 35.0},
+                {"source": "breakables (crates)", "souls": 12.0},
+            ])
+        );
     }
 
     #[test]
