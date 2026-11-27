@@ -28,38 +28,44 @@ use resources::{HERO_TEMPLATE, hero_completions, resource_text};
 
 const INSTRUCTIONS: &str = "\
 Deadlock (Valve's hero shooter) statistics and game knowledge.
-- Players are identified by account id (the Steam32 id). Start with player_search when you only have a name, a SteamID64 or a profile link.
-- player_overview lists a player's recent matches with their match ids; the match_* tools take those ids.
-- A player's `result` is their own: `not_scored` when the game voided the match for them (usually a teammate left); a leaver's match is a loss even if their team won.
-- Every answer lists its `sources`; when one is `stale`, the data source failed and an older copy was used, so say so. One with an `error` failed with nothing cached, so the part it gives (Steam names, place names, awards) is missing, not empty.
-- Hero, ability and item names come from game_lookup; mechanics and explanations from wiki_search and wiki_page (cite the page URL; the text is CC BY-NC-SA 4.0).
-- A hero's story is on the wiki page \"<Hero>/Lore\" (e.g. \"Kelvin/Lore\"); the hero page itself only links to it.
-- A player's own stats: player_heroes (per hero), player_mates (who they play with), player_enemies (who they meet and lose to), \
-player_deaths_map (where on the map they die and kill; positions as in match_player, with the objective they are near). ingest_status says whether the player \
-runs the API's ingest tool; without it the API may miss some of their matches, so totals can be low.
-- The meta over all players: hero_stats (win and pick rate per hero), and for one hero hero_items (shop items), hero_counters \
-(enemies), hero_synergies (teammates) and ability_order. performance_curve gives the average net worth, K/D/A and \
-souls by source at each stats snapshot of a match; stat_percentiles where a match's per-match stats (souls per minute, \
-K/D/A, damage, accuracy...) rank; its percentiles rank single matches, not players. Filter them to a player's rank with min_rank/max_rank \
-(rank names as player_overview gives them, e.g. \"Ascendant\" or \"Eternus III\") and say how many matches a rate rests on; small samples mislead.
-- builds lists in-game builds of a hero by popularity; leaderboard the top players of a region; patches the patch notes \
-(pass a patch's link for its text) to tell whether a stat predates a balance change.
-- game_lookup gives ability and item tooltips: description, what each ability upgrade adds, cooldowns and other values.
-- Resources: hero cards at deadlock://hero/<hero id> (role, lore, abilities with tooltips) and match summaries at \
-deadlock://match/<match id>.";
+- Players are identified by account id (the Steam32 id): player_search finds it from a name, a SteamID64 or a profile link. \
+player_overview lists their recent matches; the match_* tools take those match ids.
+- A player's `result` is their own: `not_scored` when the game voided the match for them (usually a teammate left); a \
+leaver's match is a loss even if their team won.
+- Every answer lists its `sources`. A `stale` one failed and an older copy was used: say so. One with an `error` failed \
+with nothing cached, so what it gives (Steam names, place names, awards) is missing, not empty.
+- A player's own stats: player_heroes, player_mates, player_enemies, player_deaths_map. The API has only the matches \
+someone sent it; ingest_status says whether the player sends theirs, else totals can be low.
+- The meta over all players: hero_stats, hero_items, hero_counters, hero_synergies, ability_order, builds, leaderboard; \
+performance_curve and stat_percentiles place one match against the average. Filter them to the player's rank \
+(min_rank/max_rank), say how many matches a rate rests on (small samples mislead), and check patches for a balance \
+change since.
+- game_lookup gives hero, ability and item names and tooltips; wiki_search and wiki_page the mechanics (cite the page \
+URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/Lore\".
+- Resources: hero cards at deadlock://hero/<hero id>, match summaries at deadlock://match/<match id>.";
 
 const REVIEW_STEPS: &str = "\
-1. Resolve the player with player_search if needed, then get the match id from player_overview.
-2. Call match_player and match_lanes; call match_summary for the whole lobby.
-3. Explain the result (and why it wasn't scored, if so), how the lane went, where the souls came from, \
-how many souls sat unspent compared with the lobby, where and to whom they died, and what they bought when.
-4. Compare with the meta at the player's rank (min_rank/max_rank: their rank as player_overview names it): hero_items for their hero, \
-and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters \
-for their lane opponent. Mention the match counts behind the rates.
-5. Compare their net worth over time (match_player) with performance_curve for their hero and rank, \
-and their souls per minute, K/D/A and damage with stat_percentiles for the same hero and rank.
-6. If they died often, player_deaths_map with their hero shows whether those places are a habit.
-7. End with two or three concrete things to do differently. Check mechanics on the wiki before relying on them.";
+1. Resolve the player with player_search if needed, then get the match id from player_overview. Note how experienced \
+they are: player_heroes (their matches on this hero), and whether the match is ranked (match_summary's mode and ranks).
+2. Get the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
+in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), and match_player for the player.
+3. For the player's lane, call match_player for both lane opponents and the lane partner: compare souls by source \
+(lane, jungle, kills, objectives, urn), net worth over time, and when each bought what.
+4. Compare the player with the hero's meta, at their rank when the match is ranked (min_rank/max_rank as \
+player_overview names it), over all ranks otherwise: performance_curve (their net worth at each snapshot against the \
+average and its spread: when they fell behind, and which souls they lacked) and stat_percentiles (deaths, souls per \
+minute, damage dealt and taken per minute, last hits, assists).
+5. Matchups: hero_counters with heroes set to the lane opponents (same_lane true) and hero_synergies with heroes set \
+to the lane partner. Read each pairing against average_win_rate and give its place with the direction (\"8th hardest \
+of 43\"), not a bare number.
+6. Deaths: who killed them, where and when (match_player); player_deaths_map with their hero if dying looks like a \
+habit. Items: what they bought when, next to what the enemies built and hero_items against this match's enemy heroes \
+(enemy_heroes).
+7. Before stating a conclusion, check it against a second figure that could contradict it: read assists against \
+kill_participation, and much damage taken means they were in the fights. Keep data and inference apart, give the match counts behind rates, and don't call a choice a mistake without knowing where it came from (ask \
+whether they followed a build from builds).
+8. End with two or three concrete things to do differently, each tied to a figure. Check mechanics on the wiki before \
+relying on them.";
 
 pub(super) fn fail(problem: &Problem) -> CallToolResult {
     let mut result = CallToolResult::error(vec![ContentBlock::text(problem.message())]);
@@ -127,7 +133,8 @@ pub(super) const fn default_window_days() -> u32 {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReviewMatchArgs {
-    /// The player: a Steam name, an account id, a `SteamID64` or a profile link.
+    /// The player: an account id, a `SteamID64`, a profile link or a Steam name. Prefer an id: a
+    /// client that splits command arguments at spaces cuts a name with a space in it.
     pub player: String,
     /// The match to review; the player's latest match when left out.
     pub match_id: Option<String>,

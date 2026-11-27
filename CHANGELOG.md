@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- `hero_counters` and `hero_synergies` take `heroes`: each named hero's win rate, matches and place
+  among all pairs with its direction (`hardest_place`, `best_place`), next to the hero's average
+  win rate.
+- `match_player` gives the player's kill participation; `match_summary` says whether the game
+  matched the lobby in its new player or low priority pool.
+
+### Changed
+
+- The server instructions are shorter: a map of the tools and the rules that span them.
+- The `review_match` prompt starts from the whole match, compares the lane with both opponents and
+  the partner, and checks each conclusion against a second figure.
+
+### Fixed
+
+- Seven heroes lost an ability whose tooltip has no text of its own, among them Solomon's Develop
+  Queen and Graves' Borrowed Decree; a hero's abilities are now its signature and ultimate ones.
+- `player_overview` gives `rank: null` when the API holds no ranked match of the player, instead of
+  "Obscurus", which read as unranked.
+
 ## [0.1.0] - 2026-11-27
 
 ### Added
