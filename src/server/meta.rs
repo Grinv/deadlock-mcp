@@ -121,6 +121,11 @@ pub struct HeroPairArgs {
     #[serde(default = "default_ten")]
     #[garde(range(min = 1, max = 50))]
     pub limit: u32,
+    /// Also place these heroes among all pairs, e.g. a match's lane opponents for
+    /// `hero_counters` or the lane partner for `hero_synergies`: names or ids.
+    #[serde(default)]
+    #[garde(length(max = 11), inner(length(chars, min = 1, max = 50)))]
+    pub heroes: Vec<String>,
 }
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -288,7 +293,10 @@ impl DeadlockServer {
     ) -> Result<Json<meta::Counters>, CallToolResult> {
         let a: HeroPairArgs = parse(raw)?;
         let f = filters(a.min_rank, a.max_rank, a.days);
-        run(move || meta::hero_counters(&a.hero, &f, a.min_matches, a.same_lane, a.limit)).await
+        run(move || {
+            meta::hero_counters(&a.hero, &f, a.min_matches, a.same_lane, a.limit, &a.heroes)
+        })
+        .await
     }
 
     /// The teammates a hero wins most and least with.
@@ -303,7 +311,10 @@ impl DeadlockServer {
     ) -> Result<Json<meta::Synergies>, CallToolResult> {
         let a: HeroPairArgs = parse(raw)?;
         let f = filters(a.min_rank, a.max_rank, a.days);
-        run(move || meta::hero_synergies(&a.hero, &f, a.min_matches, a.same_lane, a.limit)).await
+        run(move || {
+            meta::hero_synergies(&a.hero, &f, a.min_matches, a.same_lane, a.limit, &a.heroes)
+        })
+        .await
     }
 
     /// A hero's most common and best-winning ability upgrade orders.

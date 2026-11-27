@@ -240,6 +240,36 @@ pub struct Pairing {
 /// `(other hero, wins, matches)`.
 type PairRow = (u32, i64, i64);
 
+/// Best win rate first; ties by hero id, so every call gives the same order.
+fn by_win_rate(a: &PairRow, b: &PairRow) -> std::cmp::Ordering {
+    rate(b.1, b.2)
+        .total_cmp(&rate(a.1, a.2))
+        .then(a.0.cmp(&b.0))
+}
+
+/// Each of `picks` with its row and its place among `rows` by win rate, 1 = the best; `None`
+/// for a hero without a row (fewer matches than `min_matches`).
+fn standings(rows: &[PairRow], picks: &[u32]) -> Vec<(u32, Option<(PairRow, usize)>)> {
+    let mut sorted = rows.to_vec();
+    sorted.sort_by(by_win_rate);
+    picks
+        .iter()
+        .map(|&h| {
+            let found = sorted
+                .iter()
+                .position(|r| r.0 == h)
+                .map(|i| (sorted[i], i + 1));
+            (h, found)
+        })
+        .collect()
+}
+
+/// The hero's win rate over all its pairs, the baseline a single pairing is read against.
+fn average_win_rate(rows: &[PairRow]) -> Option<f64> {
+    let (wins, matches) = rows.iter().fold((0, 0), |(w, m), r| (w + r.1, m + r.2));
+    win_rate(wins, matches)
+}
+
 /// Rows as the best and the worst `limit` pairings.
 fn best_and_worst(cat: &Catalog, rows: Vec<PairRow>, limit: u32) -> (Vec<Pairing>, Vec<Pairing>) {
     let (best, worst) = split_best_worst(rows, take(limit));
@@ -257,11 +287,7 @@ fn best_and_worst(cat: &Catalog, rows: Vec<PairRow>, limit: u32) -> (Vec<Pairing
 /// The `n` rows with the best win rate and the `n` with the worst, worst first. With fewer than
 /// `2 * n` rows the better half is best and the rest worst, so no row is in both.
 fn split_best_worst(mut rows: Vec<PairRow>, n: usize) -> (Vec<PairRow>, Vec<PairRow>) {
-    rows.sort_by(|a, b| {
-        rate(b.1, b.2)
-            .total_cmp(&rate(a.1, a.2))
-            .then(a.0.cmp(&b.0))
-    });
+    rows.sort_by(by_win_rate);
     let best = n.min(rows.len().div_ceil(2));
     let worst = rows[best..].iter().rev().take(n).copied().collect();
     rows.truncate(best);
@@ -280,6 +306,10 @@ pub struct Counters {
     pub hero: String,
     /// Only enemies that laned against the hero.
     pub same_lane: bool,
+    /// The hero's win rate over all its enemies here, to read each pairing against.
+    pub average_win_rate: Option<f64>,
+    /// The enemies asked for in `heroes`, in that order.
+    pub heroes: Vec<Matchup>,
     /// Enemies the hero wins most against, best first.
     pub best_against: Vec<Pairing>,
     /// Enemies the hero loses most against, worst first.
@@ -293,14 +323,19 @@ pub fn hero_counters(
     min_matches: u32,
     same_lane: bool,
     limit: u32,
+    heroes: &[String],
 ) -> Result<Counters> {
     let cat = catalog()?;
     let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
+    let picks = heroes
+        .iter()
+        .map(|h| cat.find_hero(h))
+        .collect::<Result<Vec<u32>>>()?;
     let (rows, source) = api::hero_counter_stats(&pair_query(&filters, min_matches, same_lane))?;
     let sources = answer_sources([source], &cat);
     Ok(hero_counters_from(
-        &cat, hero_id, same_lane, limit, &rows, sources,
+        &cat, hero_id, same_lane, limit, &picks, &rows, sources,
     ))
 }
 
@@ -309,22 +344,65 @@ fn hero_counters_from(
     hero_id: u32,
     same_lane: bool,
     limit: u32,
+    picks: &[u32],
     rows: &[HeroCounterStats],
     sources: Vec<Source>,
 ) -> Counters {
-    let rows = rows
+    let rows: Vec<PairRow> = rows
         .iter()
         .filter(|r| id32(r.hero_id.into()) == hero_id)
         .map(|r| (id32(r.enemy_hero_id.into()), r.wins, r.matches_played))
         .collect();
+    let of = rows.len();
+    let heroes = standings(&rows, picks)
+        .into_iter()
+        .map(|(h, found)| Matchup {
+            hero: cat.hero(h),
+            matches: found.map_or(0, |(r, _)| r.2),
+            win_rate: found.and_then(|(r, _)| win_rate(r.1, r.2)),
+            hardest_place: found.map(|(_, best)| of + 1 - best),
+            of,
+        })
+        .collect();
+    let average_win_rate = average_win_rate(&rows);
     let (best_against, worst_against) = best_and_worst(cat, rows, limit);
     Counters {
         hero: cat.hero(hero_id),
         same_lane,
+        average_win_rate,
+        heroes,
         best_against,
         worst_against,
         sources,
     }
+}
+
+/// An enemy asked for, and how hard it is for the hero next to all the others.
+#[derive(Serialize, JsonSchema)]
+pub struct Matchup {
+    pub hero: String,
+    pub matches: i64,
+    /// The asked-about hero's wins over those matches, 0..1.
+    pub win_rate: Option<f64>,
+    /// 1 = the enemy the hero loses to most, `of` = the one it beats most; `None` when the pair has
+    /// fewer matches than `min_matches`.
+    pub hardest_place: Option<usize>,
+    /// How many enemies have enough matches to be ranked.
+    pub of: usize,
+}
+
+/// A teammate asked for, and how well the hero does with it next to all the others.
+#[derive(Serialize, JsonSchema)]
+pub struct Partnership {
+    pub hero: String,
+    pub matches: i64,
+    /// The asked-about hero's wins over those matches, 0..1.
+    pub win_rate: Option<f64>,
+    /// 1 = the teammate the hero wins most with, `of` = the one it wins least with; `None` when
+    /// the pair has fewer matches than `min_matches`.
+    pub best_place: Option<usize>,
+    /// How many teammates have enough matches to be ranked.
+    pub of: usize,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -332,6 +410,10 @@ pub struct Synergies {
     pub hero: String,
     /// Only teammates that shared the hero's lane.
     pub same_lane: bool,
+    /// The hero's win rate over all its teammates here, to read each pairing against.
+    pub average_win_rate: Option<f64>,
+    /// The teammates asked for in `heroes`, in that order.
+    pub heroes: Vec<Partnership>,
     /// Teammates the hero wins most with, best first.
     pub best_with: Vec<Pairing>,
     /// Teammates the hero wins least with, worst first.
@@ -345,14 +427,19 @@ pub fn hero_synergies(
     min_matches: u32,
     same_lane: bool,
     limit: u32,
+    heroes: &[String],
 ) -> Result<Synergies> {
     let cat = catalog()?;
     let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
+    let picks = heroes
+        .iter()
+        .map(|h| cat.find_hero(h))
+        .collect::<Result<Vec<u32>>>()?;
     let (rows, source) = api::hero_synergy_stats(&pair_query(&filters, min_matches, same_lane))?;
     let sources = answer_sources([source], &cat);
     Ok(hero_synergies_from(
-        &cat, hero_id, same_lane, limit, &rows, sources,
+        &cat, hero_id, same_lane, limit, &picks, &rows, sources,
     ))
 }
 
@@ -361,11 +448,12 @@ fn hero_synergies_from(
     hero_id: u32,
     same_lane: bool,
     limit: u32,
+    picks: &[u32],
     rows: &[HeroSynergyStats],
     sources: Vec<Source>,
 ) -> Synergies {
     // Each pair comes once, in either order.
-    let rows = rows
+    let rows: Vec<PairRow> = rows
         .iter()
         .filter_map(|r| {
             let (a, b) = (id32(r.hero_id1.into()), id32(r.hero_id2.into()));
@@ -379,10 +467,24 @@ fn hero_synergies_from(
             Some((mate, r.wins, r.matches_played))
         })
         .collect();
+    let of = rows.len();
+    let heroes = standings(&rows, picks)
+        .into_iter()
+        .map(|(h, found)| Partnership {
+            hero: cat.hero(h),
+            matches: found.map_or(0, |(r, _)| r.2),
+            win_rate: found.and_then(|(r, _)| win_rate(r.1, r.2)),
+            best_place: found.map(|(_, best)| best),
+            of,
+        })
+        .collect();
+    let average_win_rate = average_win_rate(&rows);
     let (best_with, worst_with) = best_and_worst(cat, rows, limit);
     Synergies {
         hero: cat.hero(hero_id),
         same_lane,
+        average_win_rate,
+        heroes,
         best_with,
         worst_with,
         sources,
@@ -921,12 +1023,19 @@ mod tests {
         // The last row is hero 2's view of the same pairing and must not count for hero 1.
         let rows = [row(1, 2, 6), row(1, 3, 3), row(2, 1, 9)];
         let cat = Catalog::test(&[(1, "H1"), (2, "H2"), (3, "H3")]);
-        let c = hero_counters_from(&cat, 1, true, 1, &rows, Vec::new());
+        // H3 is the enemy H1 loses to most; H4 has no pair with enough matches.
+        let c = hero_counters_from(&cat, 1, true, 1, &[3, 2, 4], &rows, Vec::new());
         assert_eq!(
             serde_json::to_value(&c).unwrap(),
             serde_json::json!({
                 "hero": "H1",
                 "same_lane": true,
+                "average_win_rate": 0.45,
+                "heroes": [
+                    {"hero": "H3", "matches": 10, "win_rate": 0.3, "hardest_place": 1, "of": 2},
+                    {"hero": "H2", "matches": 10, "win_rate": 0.6, "hardest_place": 2, "of": 2},
+                    {"hero": "hero 4", "matches": 0, "win_rate": null, "hardest_place": null, "of": 2},
+                ],
                 "best_against": [{"hero": "H2", "matches": 10, "win_rate": 0.6}],
                 "worst_against": [{"hero": "H3", "matches": 10, "win_rate": 0.3}],
                 "sources": [],
@@ -982,12 +1091,15 @@ mod tests {
         (other.hero_id1, other.hero_id2) = (2, 3);
         rows.push(other);
         let cat = Catalog::test(&[(1, "H1"), (2, "H2"), (3, "H3")]);
-        let s = hero_synergies_from(&cat, 1, false, 1, &rows, Vec::new());
+        let s = hero_synergies_from(&cat, 1, false, 1, &[3], &rows, Vec::new());
         assert_eq!(
             serde_json::to_value(&s).unwrap(),
             serde_json::json!({
                 "hero": "H1",
                 "same_lane": false,
+                // (36561 + 30166) / (67595 + 63618)
+                "average_win_rate": 0.509,
+                "heroes": [{"hero": "H3", "matches": 63618, "win_rate": 0.474, "best_place": 2, "of": 2}],
                 "best_with": [{"hero": "H2", "matches": 67595, "win_rate": 0.541}],
                 "worst_with": [{"hero": "H3", "matches": 63618, "win_rate": 0.474}],
                 "sources": [],
