@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::contracts::api;
 use crate::domain::format::strip_tags;
-use crate::domain::items::{Item, ItemKind};
+use crate::domain::items::Item;
 use crate::domain::map;
 use crate::http::{Source, optional_part};
 use crate::problem::{Problem, Result};
@@ -87,14 +87,18 @@ impl Catalog {
             .map(|(&id, name)| (id, name))
     }
 
-    /// A hero's abilities by name. Abilities without tooltip text are helpers (melee, internal
-    /// parts of a signature ability) and left out.
+    /// A hero's four abilities (signature and ultimate) by name; melee and the innate movement
+    /// abilities are left out. Some ultimates have no tooltip text, only their upgrades.
     pub fn abilities(&self, hero: u32) -> Vec<&Item> {
         let mut abilities: Vec<&Item> = self
             .items
             .values()
             .filter(|i| {
-                i.hero == Some(hero) && i.kind == ItemKind::Ability && i.description.is_some()
+                i.hero == Some(hero)
+                    && matches!(
+                        i.ability_type,
+                        Some(api::AbilityType::Signature | api::AbilityType::Ultimate)
+                    )
             })
             .collect();
         abilities.sort_by_key(|i| i.name.as_str());
@@ -514,5 +518,27 @@ mod tests {
         );
         let typo = cat.find_hero("kelvn").unwrap_err().message();
         assert!(typo.contains("did you mean: Kelvin"), "{typo}");
+    }
+
+    /// An ultimate without tooltip text (Solomon's Develop Queen) still counts; melee does not.
+    #[test]
+    fn abilities_are_the_signature_and_ultimate_ones() {
+        use crate::domain::items::ItemKind;
+        let ability = |id, name, hero, kind| {
+            let mut i = Item::test(id, name, ItemKind::Ability);
+            (i.hero, i.ability_type) = (Some(hero), Some(kind));
+            i
+        };
+        let mut bishop = ability(1, "Setup Bishop", 85, api::AbilityType::Signature);
+        bishop.description = Some("Create a bishop".to_owned());
+        let cat = Catalog::test(&[(85, "Solomon")]).with_items(vec![
+            bishop,
+            ability(2, "Develop Queen", 85, api::AbilityType::Ultimate),
+            ability(3, "Melee", 85, api::AbilityType::Melee),
+            ability(4, "Dash", 85, api::AbilityType::Innate),
+            ability(5, "Other's", 1, api::AbilityType::Signature),
+        ]);
+        let names: Vec<&str> = cat.abilities(85).iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["Develop Queen", "Setup Bishop"]);
     }
 }

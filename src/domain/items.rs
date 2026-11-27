@@ -22,6 +22,8 @@ pub struct Item {
     pub id: u32,
     pub name: String,
     pub kind: ItemKind,
+    /// The game's kind of an ability: a hero's four are `signature` and `ultimate`.
+    pub ability_type: Option<api::AbilityType>,
     /// Shop category of an upgrade.
     pub slot: Option<api::ItemSlotType>,
     pub hero: Option<u32>,
@@ -101,6 +103,7 @@ impl From<api::Item> for Item {
                 id,
                 name,
                 hero,
+                ability_type,
                 description: d,
                 properties: props,
                 ..
@@ -108,6 +111,7 @@ impl From<api::Item> for Item {
                 id: id32(id),
                 name,
                 kind: ItemKind::Ability,
+                ability_type,
                 slot: None,
                 hero: hero.map(id32),
                 tier: None,
@@ -131,6 +135,7 @@ impl From<api::Item> for Item {
                 id: id32(id),
                 name,
                 kind: ItemKind::Weapon,
+                ability_type: None,
                 slot: None,
                 hero: hero.map(id32),
                 tier: None,
@@ -154,6 +159,7 @@ impl From<api::Item> for Item {
                 id: id32(id),
                 name,
                 kind: ItemKind::Upgrade,
+                ability_type: None,
                 slot: Some(item_slot_type),
                 hero: hero.map(id32),
                 tier: Some(item_tier),
@@ -196,6 +202,7 @@ mod tests {
                 id,
                 name: name.to_owned(),
                 kind,
+                ability_type: None,
                 slot: None,
                 hero: None,
                 tier: None,
