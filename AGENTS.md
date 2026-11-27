@@ -35,8 +35,17 @@ Linux x86_64 and aarch64 against musl in a pinned Rust Alpine image (static, so 
 glibc), macOS arm64 and x86_64 joined into one universal binary, Windows x64. It checks the tag
 against `Cargo.toml`, takes the release notes from the version's `CHANGELOG.md` section, packs
 `deadlock-mcp.mcpb`, creates the GitHub Release, and publishes `server.json` with the bundle's
-SHA-256 to the MCP Registry as `io.github.Grinv/deadlock-mcp`. Running the workflow by hand
-(`workflow_dispatch`) builds and packs everything without publishing, to try a change first.
+SHA-256 to the MCP Registry as `io.github.Grinv/deadlock-mcp`. It also publishes the npm packages
+that `cargo xtask npm` lays out: `deadlock-mcp`, whose launcher (`npm/deadlock-mcp.js`) runs the
+binary of the `@grinv/deadlock-mcp-<platform>` package npm installed for the machine by `os` and
+`cpu`. Running the workflow by hand (`workflow_dispatch`) builds and packs everything without
+publishing, to try a change first.
+
+npm Trusted Publishing (OIDC, no token) can be set up only for a package that exists, so the six
+packages are first published by hand from the `release` artifact of a dry run
+(`npm publish <tarball> --access public`, platform packages first); then each one gets
+`Grinv/deadlock-mcp` and `release.yml` as its trusted publisher on npmjs.com. The workflow skips a
+version that is already on npm.
 
 In the bundle, `server/deadlock-mcp` is the macOS binary, `server/deadlock-mcp-x86_64` and
 `-aarch64` the Linux ones, `server/deadlock-mcp.exe` the Windows one. On macOS and Linux the

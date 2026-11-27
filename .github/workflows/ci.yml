@@ -32,6 +32,8 @@ jobs:
         run: |
           cargo xtask manifest && git diff --exit-code manifest.json
           npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
+      - name: The npm launcher parses
+        run: node --check npm/deadlock-mcp.js
 
   test:
     strategy:

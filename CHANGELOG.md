@@ -28,7 +28,8 @@ All notable changes to this project are documented here. The format is based on
   RFC 9457 problems.
 - Answers are cached on disk; entries unused for 30 days are deleted at startup.
 - An `.mcpb` bundle for Claude Desktop and other MCPB clients, with the server for macOS, Windows
-  and Linux, and an entry in the MCP Registry.
+  and Linux; an npm package (`npx -y deadlock-mcp`) that installs only the build for the machine;
+  and an entry in the MCP Registry for both.
 - The catalog follows the newest game version the Deadlock API has processed.
 - Deaths in `match_player` and hotspots in `player_deaths_map` name the objective they are near,
   e.g. "The Archmother's York Guardian"; `match_player` gives the net worth at each stats snapshot.

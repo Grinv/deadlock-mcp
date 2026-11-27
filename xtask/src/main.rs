@@ -74,7 +74,11 @@ fn main() -> Result<()> {
         Some("server-json") => {
             manifest::server_json(root, &std::env::args().nth(2).unwrap_or_default())
         }
-        _ => Err("usage: cargo xtask contracts|manifest|server-json <sha256>".into()),
+        Some("npm") => match std::env::args().nth(2) {
+            Some(out) => manifest::npm(root, Path::new(&out)),
+            None => Err("usage: cargo xtask npm <output dir>".into()),
+        },
+        _ => Err("usage: cargo xtask contracts|manifest|server-json <sha256>|npm <dir>".into()),
     }
 }
 

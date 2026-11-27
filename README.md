@@ -102,6 +102,25 @@ To update, download the new bundle from the
 the old version. To hear about new versions, watch the repository for releases on GitHub (Watch,
 Custom, Releases).
 
+### With npx
+
+With Node.js 22 or newer, the npm package runs the server without installing anything else; npm
+fetches only the build for your system (about 3 MB). Claude Code:
+
+```sh
+claude mcp add deadlock -- npx -y deadlock-mcp
+```
+
+Clients configured with JSON:
+
+```json
+{
+  "mcpServers": {
+    "deadlock": { "command": "npx", "args": ["-y", "deadlock-mcp"] }
+  }
+}
+```
+
 ### From source
 
 With Rust 1.100 or newer:

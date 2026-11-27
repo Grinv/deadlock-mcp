@@ -7,6 +7,9 @@
 //! - `cargo xtask server-json <sha256>` writes `<target dir>/server.json` for the MCP Registry
 //!   (<https://github.com/modelcontextprotocol/registry>). Its `.mcpb` package needs the archive's
 //!   SHA-256, which exists only once a release is built, so the release writes it.
+//! - `cargo xtask npm <dir>` writes the npm packages: `deadlock-mcp`, whose launcher runs the binary
+//!   of the `@grinv/deadlock-mcp-<platform>` package npm installs for the machine. The release puts
+//!   each binary into its package's `bin/` and publishes them.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -33,6 +36,17 @@ const REGISTRY_SCHEMA: &str =
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
 /// The registry's limit on `description`.
 const MAX_DESCRIPTION: usize = 100;
+/// npm scope of the per-platform binary packages.
+const NPM_SCOPE: &str = "@grinv";
+/// The npm packages with a binary: name suffix, `os`, `cpu`, and the binary's file name. The
+/// Windows one also installs on Arm, which runs it through its x64 emulation.
+const NPM_PLATFORMS: &[(&str, &str, &[&str], &str)] = &[
+    ("linux-x64", "linux", &["x64"], "deadlock-mcp"),
+    ("linux-arm64", "linux", &["arm64"], "deadlock-mcp"),
+    ("darwin-x64", "darwin", &["x64"], "deadlock-mcp"),
+    ("darwin-arm64", "darwin", &["arm64"], "deadlock-mcp"),
+    ("win32-x64", "win32", &["x64", "arm64"], "deadlock-mcp.exe"),
+];
 
 struct Facts {
     package: Value,
@@ -62,6 +76,15 @@ impl Facts {
     fn repository(&self) -> &str {
         self.package["repository"].as_str().unwrap_or_default()
     }
+}
+
+/// `https://github.com/Owner/Repo` -> `io.github.Owner/Repo`, the namespace the registry verifies
+/// through GitHub.
+fn registry_name(repository: &str) -> Result<String> {
+    repository
+        .strip_prefix("https://github.com/")
+        .map(|path| format!("io.github.{path}"))
+        .ok_or_else(|| "the registry name needs a GitHub repository URL".into())
 }
 
 pub fn manifest(root: &Path) -> Result<()> {
@@ -124,12 +147,7 @@ pub fn server_json(root: &Path, sha256: &str) -> Result<()> {
     }
     let facts = Facts::load(root)?;
     let repository = facts.repository();
-    // `https://github.com/Owner/Repo` -> `io.github.Owner/Repo`, the namespace the registry
-    // verifies through GitHub.
-    let name = repository
-        .strip_prefix("https://github.com/")
-        .map(|path| format!("io.github.{path}"))
-        .ok_or("the registry name needs a GitHub repository URL")?;
+    let name = registry_name(repository)?;
     let version = &facts.server["version"];
     let server = json!({
         "$schema": REGISTRY_SCHEMA,
@@ -140,6 +158,12 @@ pub fn server_json(root: &Path, sha256: &str) -> Result<()> {
         "websiteUrl": format!("{repository}#readme"),
         "repository": { "url": repository, "source": "github" },
         "packages": [{
+            "registryType": "npm",
+            "identifier": PACKAGE,
+            "version": version,
+            "runtimeHint": "npx",
+            "transport": { "type": "stdio" }
+        }, {
             "registryType": "mcpb",
             "identifier": format!(
                 "{repository}/releases/download/v{}/{PACKAGE}.mcpb",
@@ -151,6 +175,68 @@ pub fn server_json(root: &Path, sha256: &str) -> Result<()> {
         }]
     });
     write(&target_dir(root).join("server.json"), &server)
+}
+
+/// Writes the npm packages into `out`: `deadlock-mcp`, with the launcher, and one
+/// `@grinv/deadlock-mcp-<platform>` per build, each with an empty `bin/` for its binary.
+pub fn npm(root: &Path, out: &Path) -> Result<()> {
+    let package = package(root)?;
+    let version = &package["version"];
+    let repository = package["repository"].as_str().unwrap_or_default();
+    let common = |name: String, description: String| {
+        json!({
+            "name": name,
+            "version": version,
+            "description": description,
+            "license": package["license"],
+            "repository": { "type": "git", "url": format!("git+{repository}.git") },
+            "files": ["bin/"]
+        })
+    };
+    let license = std::fs::read(root.join("LICENSE"))?;
+    let mut optional = serde_json::Map::new();
+    for (suffix, os, cpu, exe) in NPM_PLATFORMS {
+        let name = format!("{NPM_SCOPE}/{PACKAGE}-{suffix}");
+        let mut manifest = common(
+            name.clone(),
+            format!("The {PACKAGE} binary for {suffix} ({exe})."),
+        );
+        manifest["os"] = json!([os]);
+        manifest["cpu"] = json!(cpu);
+        // Yarn PnP would otherwise keep the binary inside a zip it can't exec from.
+        manifest["preferUnplugged"] = json!(true);
+        let dir = out.join(suffix);
+        std::fs::create_dir_all(dir.join("bin"))?;
+        std::fs::write(dir.join("LICENSE"), &license)?;
+        write(&dir.join("package.json"), &manifest)?;
+        optional.insert(name, version.clone());
+    }
+    let mut manifest = common(
+        PACKAGE.to_owned(),
+        package["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
+    );
+    manifest["keywords"] = package["keywords"].clone();
+    manifest["homepage"] = json!(format!("{repository}#readme"));
+    manifest["bugs"] = json!(format!("{repository}/issues"));
+    // The MCP Registry reads this to check that the npm package belongs to the server.
+    manifest["mcpName"] = json!(registry_name(repository)?);
+    manifest["bin"] = json!({ PACKAGE: format!("bin/{PACKAGE}.js") });
+    // `import.meta.resolve` returns synchronously from Node 20.6; 20 is out of support.
+    manifest["type"] = json!("module");
+    manifest["engines"] = json!({ "node": ">=22" });
+    manifest["optionalDependencies"] = Value::Object(optional);
+    let dir = out.join(PACKAGE);
+    std::fs::create_dir_all(dir.join("bin"))?;
+    std::fs::copy(
+        root.join("npm").join(format!("{PACKAGE}.js")),
+        dir.join("bin").join(format!("{PACKAGE}.js")),
+    )?;
+    std::fs::copy(root.join("README.md"), dir.join("README.md"))?;
+    std::fs::write(dir.join("LICENSE"), &license)?;
+    write(&dir.join("package.json"), &manifest)
 }
 
 fn target_dir(root: &Path) -> PathBuf {

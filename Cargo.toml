@@ -38,6 +38,10 @@ tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
 ureq = "3.5.2"
 
 [profile.release]
+# Optimized for size: 21% smaller than level 3 and no slower in a measured catalog parse (99 vs
+# 98 ms) and match decode (100 vs 107 ms); the server mostly waits for the network. Panics keep
+# unwinding: a tool that panics answers `internal-error` and the server keeps running.
+opt-level = "s"
 strip = true
 lto = true
 codegen-units = 1
