@@ -186,8 +186,8 @@ impl Catalog {
         &self.lanes
     }
 
-    /// The objective within about 50 m of a world position (as in match data), e.g. "The
-    /// Archmother's York Guardian".
+    /// The objective near a world position (as in match data), e.g. "The Archmother's York
+    /// Guardian".
     pub fn near(&self, x: f64, y: f64) -> Option<String> {
         map::near(&self.landmarks, x, y)
     }

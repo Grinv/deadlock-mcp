@@ -13,7 +13,7 @@ use rmcp::model::{
     CallToolResult, CompleteRequestParams, CompleteResult, CompletionInfo, ContentBlock,
     Implementation, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
     PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Reference,
-    Resource, ResourceContents, ResourceTemplate, Role, ServerCapabilities, ServerConfig,
+    ResourceContents, Role, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::{
@@ -23,7 +23,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::problem::{Kind, Problem};
-use resources::{HERO_TEMPLATE, MATCH_TEMPLATE, hero_completions, hero_resources, resource_text};
+use resources::{HERO_TEMPLATE, hero_completions, resource_text};
 
 const INSTRUCTIONS: &str = "\
 Deadlock (Valve's hero shooter) statistics and game knowledge.
@@ -200,19 +200,8 @@ impl ServerHandler for DeadlockServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
-        let heroes = blocking(hero_resources).await?;
         Ok(ListResourcesResult::with_all_items(
-            [
-                Resource::new("deadlock://heroes", "heroes")
-                    .with_description("Every playable hero with its id and abilities (JSON)")
-                    .with_mime_type("application/json"),
-                Resource::new("deadlock://items", "items")
-                    .with_description("Every shop item with id, slot, tier and cost (JSON)")
-                    .with_mime_type("application/json"),
-            ]
-            .into_iter()
-            .chain(heroes)
-            .collect(),
+            blocking(resources::resources).await?,
         ))
     }
 
@@ -221,19 +210,9 @@ impl ServerHandler for DeadlockServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, ErrorData> {
-        Ok(ListResourceTemplatesResult::with_all_items(vec![
-            ResourceTemplate::new(HERO_TEMPLATE, "hero")
-                .with_title("Hero card")
-                .with_description(
-                    "A hero's role, playstyle, lore and abilities with their tooltips (JSON). \
-                     Hero ids are in deadlock://heroes or from game_lookup.",
-                )
-                .with_mime_type("application/json"),
-            ResourceTemplate::new(MATCH_TEMPLATE, "match")
-                .with_title("Match summary")
-                .with_description("The match_summary answer for a match id (JSON)")
-                .with_mime_type("application/json"),
-        ]))
+        Ok(ListResourceTemplatesResult::with_all_items(
+            resources::templates(),
+        ))
     }
 
     async fn complete(

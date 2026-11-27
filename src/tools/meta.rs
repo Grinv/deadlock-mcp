@@ -15,7 +15,7 @@ use crate::contracts::api::{
 };
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
-use crate::domain::format::{bounded, date, mmss, plain};
+use crate::domain::format::{clip, date, mmss, plain};
 use crate::domain::items::ItemKind;
 use crate::domain::terms::gold_source_name;
 use crate::http::Source;
@@ -472,6 +472,14 @@ pub struct HeroBuilds {
     pub sources: Vec<Source>,
 }
 
+/// Build descriptions are cut here.
+const MAX_DESCRIPTION: usize = 300;
+
+/// A build author's description as plain text, cut at `MAX_DESCRIPTION`; `None` when blank.
+fn build_description(d: &str) -> Option<String> {
+    Some(clip(plain(d).trim(), MAX_DESCRIPTION)).filter(|d| !d.is_empty())
+}
+
 pub fn builds(
     hero: &str,
     search: Option<&str>,
@@ -508,11 +516,7 @@ pub fn builds(
                 weekly_favorites: b.num_weekly_favorites,
                 favorites: b.num_favorites,
                 last_updated: h.last_updated_timestamp.map(date),
-                description: h
-                    .description
-                    .as_deref()
-                    .map(|d| bounded(plain(d).trim(), 300).0)
-                    .filter(|d| !d.is_empty()),
+                description: h.description.as_deref().and_then(build_description),
             }
         })
         .collect();
@@ -1027,6 +1031,17 @@ mod tests {
                 {"source": "breakables (crates)", "souls": 12.0},
             ])
         );
+    }
+
+    #[test]
+    fn build_descriptions_are_cut_and_blank_ones_dropped() {
+        let long = format!(" {}\u{200b}", "a".repeat(MAX_DESCRIPTION + 1));
+        assert_eq!(
+            build_description(&long),
+            Some(format!("{}…", "a".repeat(MAX_DESCRIPTION)))
+        );
+        assert_eq!(build_description(" short "), Some("short".to_owned()));
+        assert_eq!(build_description(" \u{200b} "), None);
     }
 
     #[test]

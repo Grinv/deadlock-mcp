@@ -197,8 +197,8 @@ pub fn ability_order_stats(
     )
 }
 
-/// The average player's stats at each stats snapshot of a match (every 3 minutes up to 15:00,
-/// then every 5), in seconds of game time rather than shares of the match.
+/// The average player's stats at each stats snapshot of a match, in seconds of game time rather
+/// than shares of the match.
 pub fn performance_curve(filters: &str) -> Result<(Vec<api::PlayerPerformanceCurvePoint>, Source)> {
     get_json(
         &format!(

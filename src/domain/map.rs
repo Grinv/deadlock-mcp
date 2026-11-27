@@ -106,7 +106,7 @@ pub fn landmarks(map: &api::MapData, lanes: &[(u32, Lane)]) -> Vec<Landmark> {
         .collect()
 }
 
-/// The landmark nearest to a world position, if one is within about 50 m.
+/// The landmark nearest to a world position, if one is within `NEAR`.
 pub fn near(landmarks: &[Landmark], x: f64, y: f64) -> Option<String> {
     landmarks
         .iter()

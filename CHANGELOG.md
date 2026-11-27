@@ -34,3 +34,4 @@ All notable changes to this project are documented here. The format is based on
 
 - `deadlock://items` lists the shop slots in the game's order (weapon, spirit, vitality) instead of
   alphabetically.
+- A build description `builds` cuts at 300 characters ends with "…", like other cut texts.

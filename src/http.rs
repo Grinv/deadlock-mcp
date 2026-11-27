@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::problem::{Kind, Problem};
 
-const USER_AGENT: &str = concat!("deadlock-mcp/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 /// The 6.5 MB item catalog is the largest response.
 const MAX_BODY: u64 = 64 << 20;
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -105,7 +105,7 @@ fn dir() -> PathBuf {
         .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(std::env::temp_dir);
-    base.join("deadlock-mcp")
+    base.join(env!("CARGO_PKG_NAME"))
 }
 
 /// Seconds since the Unix epoch.
@@ -411,7 +411,7 @@ fn save(meta_path: &Path, body_path: &Path, meta: &Meta, body: Option<&[u8]>) {
         write_atomic(meta_path, &serde_json::to_vec(meta)?)
     };
     if let Err(e) = write() {
-        eprintln!("deadlock-mcp: cache write failed: {e}");
+        eprintln!("{}: cache write failed: {e}", env!("CARGO_PKG_NAME"));
     }
 }
 

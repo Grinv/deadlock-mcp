@@ -221,8 +221,8 @@ pub fn hero_card(id: u32) -> Result<Option<HeroCard>> {
     }))
 }
 
-/// Patch notes longer than this are cut.
-const MAX_NOTES: usize = 12_000;
+/// Wiki pages and patch notes are cut here, to keep a long page from filling the model's context.
+const MAX_PAGE: usize = 12_000;
 
 #[derive(Serialize, JsonSchema)]
 pub struct Patch {
@@ -291,7 +291,7 @@ fn patches_from(
                 "no patch with link {wanted:?} in the feed; call patches without a link to list them"
             )));
         };
-        let (text, truncated) = bounded(&plain(&strip_tags(content)), MAX_NOTES);
+        let (text, truncated) = bounded(&plain(&strip_tags(content)), MAX_PAGE);
         return Ok(PatchFeed {
             patches: Vec::new(),
             notes: Some(PatchNotes {
@@ -322,8 +322,6 @@ fn patches_from(
 }
 
 const LICENSE: &str = "Text from the Deadlock Wiki, CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/)";
-/// Keeps a long page from filling the model's context.
-const MAX_CHARS: usize = 12_000;
 
 #[derive(Serialize, JsonSchema)]
 pub struct SearchHit {
@@ -393,11 +391,11 @@ pub fn page(title: &str, section: Option<&str>) -> Result<Page> {
         })?,
         None => full.to_owned(),
     };
-    let truncated = text.chars().count() > MAX_CHARS;
+    let truncated = text.chars().count() > MAX_PAGE;
     Ok(Page {
         url: page_url(&real_title),
         title: real_title,
-        text: text.chars().take(MAX_CHARS).collect(),
+        text: text.chars().take(MAX_PAGE).collect(),
         sections,
         truncated,
         license: LICENSE,

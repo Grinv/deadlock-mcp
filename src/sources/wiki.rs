@@ -50,8 +50,7 @@ pub struct RawPage {
 /// Full-text search hits, at most `limit`, with the snippets' markup.
 pub fn search(query: &str, limit: u32) -> Result<(Vec<RawHit>, Source)> {
     let url = format!(
-        "{API}?action=query&list=search&format=json&srlimit={}&srsearch={}",
-        limit.clamp(1, 20),
+        "{API}?action=query&list=search&format=json&srlimit={limit}&srsearch={}",
         encode(query)
     );
     let (data, source): (Query<SearchList>, Source) = get_json(&url, FRESH)?;
