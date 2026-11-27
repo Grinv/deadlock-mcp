@@ -135,10 +135,18 @@ pub fn lookup(query: &str) -> Result<Lookup> {
             .filter(|i| i.name.to_lowercase().contains(&q))
             .map(item_entry)
             .collect();
-        // Exact names first, then shorter (closer) names.
-        let rank = |e: &Entry| (e.name.to_lowercase() != q, e.name.len());
-        heroes.sort_by_key(rank);
-        items.sort_by_key(rank);
+        // Exact names first, then shorter (closer) names; ties by name and id, as the catalog's
+        // maps iterate in a different order in every process and the list is cut at `LIMIT`.
+        let rank = |e: &Entry| {
+            (
+                e.name.to_lowercase() != q,
+                e.name.len(),
+                e.name.clone(),
+                e.id,
+            )
+        };
+        heroes.sort_by_cached_key(rank);
+        items.sort_by_cached_key(rank);
         heroes.into_iter().chain(items).collect()
     };
     if results.is_empty() {
