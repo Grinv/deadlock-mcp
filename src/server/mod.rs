@@ -155,8 +155,8 @@ impl DeadlockServer {
 }
 
 /// `schema` without schemars' `uint` formats (`uint32`, `uint64`, `uint` for `usize`...): no
-/// standard defines them, so clients can't use them, and Claude Code logs each one on every call
-/// it validates. The formats JSON Schema defines stay, and so do `OpenAPI`'s `int32`, `int64`,
+/// standard defines them, so clients can't use them, and the MCP TypeScript SDK's validator logs
+/// each one when it compiles a result schema. The formats JSON Schema defines stay, and so do `OpenAPI`'s `int32`, `int64`,
 /// `float` and `double`, which validators know; bounds are in `minimum`/`maximum`.
 fn standard_formats(schema: &rmcp::model::JsonObject) -> rmcp::model::JsonObject {
     let mut restrict = RestrictFormats::default();
