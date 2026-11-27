@@ -7,8 +7,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{DeadlockServer, default_ten, default_window_days, input_schema, parse, run};
-use crate::contracts::api::PlayerStatsMetricsKey;
-use crate::tools::meta::{HeroSort, Region};
+use crate::contracts::api::{PlayerStatsMetricsKey, Region};
+use crate::tools::meta::HeroSort;
 use crate::tools::{Filters, game, meta};
 
 const fn default_hundred() -> u32 {
@@ -385,6 +385,23 @@ impl DeadlockServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The region is the API's own enum: parsed, sent and answered under the API's names.
+    #[test]
+    fn leaderboard_region_uses_the_api_names() {
+        let args: LeaderboardArgs =
+            serde_json::from_value(serde_json::json!({"region": "NAmerica"})).unwrap();
+        assert_eq!(args.region, Region::NAmerica);
+        assert_eq!(args.region.to_string(), "NAmerica");
+        assert_eq!(
+            serde_json::to_value(args.region).unwrap(),
+            serde_json::json!("NAmerica")
+        );
+        assert!(
+            serde_json::from_value::<LeaderboardArgs>(serde_json::json!({"region": "Mars"}))
+                .is_err()
+        );
+    }
 
     /// A meta tool called without `days` reads the last 30 days, not all of the API's history.
     #[test]

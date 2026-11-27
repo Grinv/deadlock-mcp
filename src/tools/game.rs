@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::contracts::api::FeedItem;
+use crate::contracts::api::{FeedItem, ItemSlotType};
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{bounded, clip, plain, strip_tags};
 use crate::domain::items::{self, Item, ItemKind};
@@ -40,8 +40,8 @@ pub struct Entry {
     pub kind: Kind,
     /// The hero an ability or weapon belongs to.
     pub hero: Option<String>,
-    /// Shop category of an upgrade: `weapon`, `spirit` or `vitality`.
-    pub slot: Option<String>,
+    /// Shop category of an upgrade.
+    pub slot: Option<ItemSlotType>,
     pub tier: Option<i32>,
     pub cost: Option<i64>,
     /// A hero's abilities.
@@ -84,7 +84,7 @@ fn lookup_from(cat: &Catalog, query: &str) -> Result<Lookup> {
         name: i.name.clone(),
         kind: i.kind.into(),
         hero: i.hero.map(|h| cat.hero(h)),
-        slot: i.slot.clone(),
+        slot: i.slot,
         tier: i.tier,
         cost: i.cost,
         abilities: Vec::new(),

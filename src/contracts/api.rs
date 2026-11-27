@@ -557,7 +557,7 @@ pub struct BuildHeroDetailsCategoryAbility {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub sell_priority: ::std::option::Option<i64>,
 }
-///`BuildLanguage`
+///Filter builds by language.
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2298,6 +2298,7 @@ pub struct ItemProperty {
     Ord,
     PartialEq,
     PartialOrd,
+    schemars::JsonSchema,
 )]
 pub enum ItemSlotType {
     #[serde(rename = "weapon")]
@@ -3455,6 +3456,65 @@ pub struct RawWeaponInfoVerticalRecoil {
     pub burst_slope: ::std::option::Option<f64>,
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub range: ::std::option::Option<::serde_json::Value>,
+}
+///The region to fetch the leaderboard for.
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    schemars::JsonSchema,
+)]
+pub enum Region {
+    Europe,
+    Asia,
+    NAmerica,
+    SAmerica,
+    Oceania,
+}
+impl ::std::fmt::Display for Region {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Europe => f.write_str("Europe"),
+            Self::Asia => f.write_str("Asia"),
+            Self::NAmerica => f.write_str("NAmerica"),
+            Self::SAmerica => f.write_str("SAmerica"),
+            Self::Oceania => f.write_str("Oceania"),
+        }
+    }
+}
+impl ::std::str::FromStr for Region {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "Europe" => Ok(Self::Europe),
+            "Asia" => Ok(Self::Asia),
+            "NAmerica" => Ok(Self::NAmerica),
+            "SAmerica" => Ok(Self::SAmerica),
+            "Oceania" => Ok(Self::Oceania),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for Region {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for Region {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///`RejuvParams`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]

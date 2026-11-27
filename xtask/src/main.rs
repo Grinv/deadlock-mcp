@@ -45,13 +45,17 @@ const API_SCHEMAS: &[&str] = &[
     "SteamProfile",
 ];
 
-/// Enums the API declares inline on a query parameter: `(path, parameter, type name)`. They are
-/// generated as named types deriving `JsonSchema`, so tool arguments offer the API's own values.
-const API_PARAMS: &[(&str, &str, &str)] = &[("/v1/builds", "build_language", "BuildLanguage")];
+/// Enums the API declares inline on a parameter: `(path, parameter, type name)`. They are
+/// generated as named types deriving `JsonSchema`, with the parameter's description, so tool
+/// arguments offer the API's own values.
+const API_PARAMS: &[(&str, &str, &str)] = &[
+    ("/v1/builds", "build_language", "BuildLanguage"),
+    ("/v1/leaderboard/{region}", "region", "Region"),
+];
 
-/// Generated types that tool arguments take as they are (the metric names of
-/// `PlayerStatsMetrics`), so they derive `JsonSchema` as well.
-const API_ARGS: &[&str] = &["PlayerStatsMetricsKey"];
+/// Generated types that tool arguments and answers take as they are (the metric names of
+/// `PlayerStatsMetrics`, the shop slots), so they derive `JsonSchema` as well.
+const API_ARGS: &[&str] = &["ItemSlotType", "PlayerStatsMetricsKey"];
 
 /// The match metadata message and what it imports.
 const PROTO_ROOT: &str = "citadel_gcmessages_common.proto";
@@ -171,7 +175,13 @@ fn api(root: &Path) -> Result<()> {
         let schema = spec["paths"][path]["get"]["parameters"]
             .as_array()
             .and_then(|ps| ps.iter().find(|p| p["name"] == *param))
-            .map(|p| p["schema"].clone())
+            .map(|p| {
+                let mut schema = p["schema"].clone();
+                if let Some(d) = p.get("description") {
+                    schema["description"] = d.clone();
+                }
+                schema
+            })
             .ok_or(format!("no parameter {param} on {path}"))?;
         defs.insert((*name).to_owned(), schema);
         settings.with_patch(

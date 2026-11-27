@@ -9,8 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::contracts::api::{
-    AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats, ItemStats,
-    MetricValues, PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric,
+    AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats,
+    ItemSlotType, ItemStats, MetricValues, PlayerPerformanceCurvePoint,
+    PlayerStatsMetricsKey as Metric, Region,
 };
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
@@ -130,8 +131,7 @@ fn hero_stats_from(
 #[derive(Serialize, JsonSchema)]
 pub struct ItemRow {
     pub item: String,
-    /// `weapon`, `spirit` or `vitality`.
-    pub slot: Option<String>,
+    pub slot: Option<ItemSlotType>,
     pub tier: Option<i32>,
     pub cost: Option<i64>,
     /// Matches in which a player of the hero bought it.
@@ -208,7 +208,7 @@ fn hero_items_from(
             .take(take(limit))
             .map(|(r, i)| ItemRow {
                 item: i.name.clone(),
-                slot: i.slot.clone(),
+                slot: i.slot,
                 tier: i.tier,
                 cost: i.cost,
                 matches: r.matches,
@@ -526,28 +526,6 @@ pub fn builds(
     })
 }
 
-/// Leaderboard regions, as the API names them.
-#[derive(Clone, Copy, Deserialize, JsonSchema)]
-pub enum Region {
-    Europe,
-    Asia,
-    NAmerica,
-    SAmerica,
-    Oceania,
-}
-
-impl Region {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Europe => "Europe",
-            Self::Asia => "Asia",
-            Self::NAmerica => "NAmerica",
-            Self::SAmerica => "SAmerica",
-            Self::Oceania => "Oceania",
-        }
-    }
-}
-
 #[derive(Serialize, JsonSchema)]
 pub struct LeaderboardRow {
     /// Place on the leaderboard from 1; tied players share one.
@@ -561,7 +539,7 @@ pub struct LeaderboardRow {
 
 #[derive(Serialize, JsonSchema)]
 pub struct Leaderboard {
-    pub region: &'static str,
+    pub region: Region,
     pub hero: Option<String>,
     pub players: Vec<LeaderboardRow>,
     pub sources: Vec<Source>,
@@ -570,9 +548,9 @@ pub struct Leaderboard {
 pub fn leaderboard(region: Region, hero: Option<&str>, limit: u32) -> Result<Leaderboard> {
     let cat = catalog()?;
     let hero_id = hero.map(|h| cat.find_hero(h)).transpose()?;
-    let (board, source) = api::leaderboard(region.as_str(), hero_id)?;
+    let (board, source) = api::leaderboard(region, hero_id)?;
     Ok(Leaderboard {
-        region: region.as_str(),
+        region,
         hero: hero_id.map(|h| cat.hero(h)),
         players: board
             .entries

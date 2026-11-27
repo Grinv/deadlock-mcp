@@ -4,6 +4,7 @@ use rmcp::ErrorData;
 use rmcp::model::{CompletionInfo, Resource};
 use serde::Serialize;
 
+use crate::contracts::api::ItemSlotType;
 use crate::domain::assets::catalog;
 use crate::domain::items::ItemKind;
 use crate::problem::{Kind, Problem};
@@ -22,7 +23,7 @@ struct ItemResource<'a> {
     name: &'a str,
     kind: ItemKind,
     hero: Option<String>,
-    slot: Option<&'a str>,
+    slot: Option<ItemSlotType>,
     tier: Option<i32>,
     cost: Option<i64>,
 }
@@ -92,7 +93,7 @@ pub(super) fn resource_text(uri: &str) -> Result<String, ErrorData> {
                     name: &i.name,
                     kind: i.kind,
                     hero: i.hero.map(|h| cat.hero(h)),
-                    slot: i.slot.as_deref(),
+                    slot: i.slot,
                     tier: i.tier,
                     cost: i.cost,
                 })

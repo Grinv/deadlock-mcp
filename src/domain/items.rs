@@ -21,8 +21,8 @@ pub struct Item {
     pub id: u32,
     pub name: String,
     pub kind: ItemKind,
-    /// Shop category of an upgrade: `weapon`, `spirit` or `vitality`.
-    pub slot: Option<String>,
+    /// Shop category of an upgrade.
+    pub slot: Option<api::ItemSlotType>,
     pub hero: Option<u32>,
     pub tier: Option<i32>,
     pub cost: Option<i64>,
@@ -154,7 +154,7 @@ impl From<api::Item> for Item {
                 id: id32(id),
                 name,
                 kind: ItemKind::Upgrade,
-                slot: Some(item_slot_type.to_string()),
+                slot: Some(item_slot_type),
                 hero: hero.map(id32),
                 tier: Some(item_tier),
                 cost,
@@ -205,6 +205,25 @@ mod tests {
                 properties: Vec::new(),
             }
         }
+    }
+
+    /// The slot is the API's own enum and reads as the API writes it (`weapon`, not `Weapon`).
+    #[test]
+    fn upgrade_slot_keeps_the_api_name() {
+        let items: Vec<api::Item> =
+            serde_json::from_str(include_str!("../../contracts/fixtures/items.json")).unwrap();
+        let slots: Vec<_> = items
+            .into_iter()
+            .map(|i| serde_json::to_value(Item::from(i).slot).unwrap())
+            .collect();
+        assert_eq!(
+            slots,
+            [
+                serde_json::Value::Null,
+                serde_json::Value::Null,
+                serde_json::json!("weapon")
+            ]
+        );
     }
 
     #[test]

@@ -221,8 +221,11 @@ pub fn patches() -> Result<(Vec<api::FeedItem>, Source)> {
     get_json(&format!("{API}/v2/patches"), ANALYTICS)
 }
 
-/// Valve updates the leaderboard once an hour. `region` is one of the API's region names.
-pub fn leaderboard(region: &str, hero_id: Option<u32>) -> Result<(api::Leaderboard, Source)> {
+/// Valve updates the leaderboard once an hour.
+pub fn leaderboard(
+    region: api::Region,
+    hero_id: Option<u32>,
+) -> Result<(api::Leaderboard, Source)> {
     let hero = hero_id.map_or_default(|h| format!("/{h}"));
     get_json(&format!("{API}/v1/leaderboard/{region}{hero}"), ANALYTICS)
 }

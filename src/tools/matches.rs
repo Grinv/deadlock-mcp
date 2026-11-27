@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use crate::contracts::api::ItemSlotType;
 use crate::contracts::valve::ECitadelLobbyTeam;
 use crate::contracts::valve::c_msg_match_meta_data_contents::{
     MatchInfo, PlayerStats, Players, Position,
@@ -225,7 +226,7 @@ pub struct NetWorthAt {
 #[derive(Serialize, JsonSchema)]
 pub struct Purchase {
     pub item: String,
-    pub slot: Option<String>,
+    pub slot: Option<ItemSlotType>,
     pub tier: Option<i32>,
     pub bought_at: String,
     pub sold_at: Option<String>,
@@ -372,7 +373,7 @@ fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
                 .filter(|item| item.kind == ItemKind::Upgrade)?;
             Some(Purchase {
                 item: item.name.clone(),
-                slot: item.slot.clone(),
+                slot: item.slot,
                 tier: item.tier,
                 bought_at: mmss(u64::from(i.game_time_s())),
                 sold_at: Some(i.sold_time_s())
@@ -621,7 +622,7 @@ mod tests {
             Item::test(1_841_661_392, "An ability", ItemKind::Ability),
         );
         let mut upgrade = Item::test(1_792_773_251, "An upgrade", ItemKind::Upgrade);
-        upgrade.slot = Some("weapon".to_owned());
+        upgrade.slot = Some(ItemSlotType::Weapon);
         upgrade.tier = Some(1);
         cat.items.insert(upgrade.id, upgrade);
         cat

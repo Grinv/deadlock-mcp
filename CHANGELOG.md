@@ -29,3 +29,8 @@ All notable changes to this project are documented here. The format is based on
   e.g. "The Archmother's York Guardian"; `match_player` gives the net worth at each stats snapshot.
 - `performance_curve`: the average player's net worth, K/D/A, damage and souls by source over a
   match, and `stat_percentiles`: percentiles of per-match stats, both by hero, rank and period.
+
+### Changed
+
+- `deadlock://items` lists the shop slots in the game's order (weapon, spirit, vitality) instead of
+  alphabetically.
