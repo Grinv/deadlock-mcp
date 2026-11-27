@@ -7,7 +7,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{DeadlockServer, input_schema, parse, run};
-use crate::sources::wiki;
 use crate::tools::game;
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -70,9 +69,9 @@ impl DeadlockServer {
     async fn wiki_search(
         &self,
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
-    ) -> Result<Json<wiki::Search>, CallToolResult> {
+    ) -> Result<Json<game::Search>, CallToolResult> {
         let args: WikiSearchArgs = parse(raw)?;
-        run(move || wiki::search(&args.query, args.limit)).await
+        run(move || game::search(&args.query, args.limit)).await
     }
 
     /// The text of a Deadlock Wiki page, or of one of its sections.
@@ -84,8 +83,8 @@ impl DeadlockServer {
     async fn wiki_page(
         &self,
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
-    ) -> Result<Json<wiki::Page>, CallToolResult> {
+    ) -> Result<Json<game::Page>, CallToolResult> {
         let args: WikiPageArgs = parse(raw)?;
-        run(move || wiki::page(&args.title, args.section.as_deref())).await
+        run(move || game::page(&args.title, args.section.as_deref())).await
     }
 }

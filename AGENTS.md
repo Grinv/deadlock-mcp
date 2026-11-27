@@ -32,8 +32,8 @@ Data flows down this list: a module uses only the ones above it.
 |---|---|
 | `contracts/` | Pinned upstream contracts: the Deadlock API's `openapi.json`, Valve's protos, recorded answers in `fixtures/`, their origin in `SOURCES.md` |
 | `src/contracts/` | Wire types generated from `contracts/` by `cargo xtask contracts`; committed, never edited by hand |
-| `src/http.rs` | GET with the disk cache, `ETag` revalidation, stale fallback, per-host pacing, one retry |
 | `src/problem.rs` | RFC 9457 problems; every kind has a section in `docs/errors.md` |
+| `src/http.rs` | GET with the disk cache, `ETag` revalidation, stale fallback, per-host pacing, one retry |
 | `src/sources/` | One typed function per upstream endpoint, with its cache lifetime |
 | `src/domain/` | Game knowledge: the catalog (heroes, items, ranks, lanes, named places on the map) for the newest game version, names for Valve's enums, a player's own result, text helpers |
 | `src/tools/` | What each tool does, and its answer types |
@@ -48,9 +48,12 @@ Data flows down this list: a module uses only the ones above it.
   from `generic-data`, since Valve's lane enum still names the four-lane map), and a tool's schema
   from its argument type. Generate or read a list that exists upstream instead of copying it.
 - Matches over Valve's enums are exhaustive, without `_`, so a new variant breaks the build.
-- Argument types use `#[serde(deny_unknown_fields)]`, a `garde` rule on every field, and a doc
+- Tool argument types use `#[serde(deny_unknown_fields)]`, a `garde` rule on every field, and a doc
   comment that becomes the schema description. Serde can't combine `#[serde(flatten)]` with
-  `deny_unknown_fields`, so repeat shared fields instead.
+  `deny_unknown_fields`, so repeat shared fields instead. Prompt arguments (`ReviewMatchArgs`) get
+  only the doc comment: rmcp parses them with plain serde, never runs `garde`, and lists each
+  argument with just its name, description and whether it is required, so a limit would be enforced
+  without being shown.
 - Every answer has `sources`, plus `cat.degraded_sources()` when it used the catalog. Text written by
   people (Steam names, the wiki) goes through `domain::format::plain`. Every win rate carries its
   match count.
