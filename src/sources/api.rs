@@ -50,7 +50,6 @@ pub fn generic_data(version: u32) -> Result<(api::GenericData, Source)> {
     )
 }
 
-/// The minimap: its radius, the objectives' marker positions and the lanes' zip lines.
 /// End-of-match awards: id, name and the stat each tracks.
 pub fn accolades(version: u32) -> Result<(Vec<api::Accolade>, Source)> {
     get_json(
@@ -59,6 +58,7 @@ pub fn accolades(version: u32) -> Result<(Vec<api::Accolade>, Source)> {
     )
 }
 
+/// The minimap: its radius, the objectives' marker positions and the lanes' zip lines.
 pub fn map(version: u32) -> Result<(api::MapData, Source)> {
     get_json(
         &format!("{API}/v1/assets/map?client_version={version}"),

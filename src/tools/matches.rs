@@ -17,6 +17,7 @@ use crate::domain::terms::{game_mode_name, gold_source_name, match_mode_name, te
 use crate::http::Source;
 use crate::problem::{Kind, Problem, Result};
 use crate::sources::api;
+use crate::tools::answer_sources;
 use crate::tools::player::steam_names;
 
 const TEAMS: [ECitadelLobbyTeam; 2] = [
@@ -385,9 +386,7 @@ fn purchases(cat: &Catalog, p: &Players) -> Vec<Purchase> {
 pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
     let cat = catalog()?;
     let (info, source) = load(match_id)?;
-    let sources = std::iter::once(source)
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(source, &cat);
     player_from(&cat, match_id, account_id, &info, sources)
 }
 
@@ -516,9 +515,7 @@ fn net_worth_at(p: &Players, t: u32) -> u32 {
 pub fn lanes(match_id: u64) -> Result<MatchLanes> {
     let cat: std::sync::Arc<Catalog> = catalog()?;
     let (info, source) = load(match_id)?;
-    let sources = std::iter::once(source)
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(source, &cat);
     Ok(lanes_from(&cat, match_id, &info, sources))
 }
 

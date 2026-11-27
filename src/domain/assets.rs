@@ -388,6 +388,16 @@ mod tests {
             self
         }
 
+        pub fn with_items(mut self, items: Vec<Item>) -> Self {
+            self.items = items.into_iter().map(|i| (i.id, i)).collect();
+            self
+        }
+
+        pub fn with_sources(mut self, sources: Vec<Source>) -> Self {
+            self.sources = sources;
+            self
+        }
+
         pub fn with_accolades(mut self, accolades: Vec<api::Accolade>) -> Self {
             self.accolades = accolades
                 .into_iter()

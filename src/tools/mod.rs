@@ -1,4 +1,4 @@
-//! Tool logic and answer types; `server.rs` only routes MCP calls here.
+//! Tool logic and answer types; `src/server/` only routes MCP calls here.
 
 pub mod game;
 pub mod matches;
@@ -6,6 +6,9 @@ pub mod meta;
 pub mod player;
 
 use std::fmt::Write as _;
+
+use crate::domain::assets::Catalog;
+use crate::http::Source;
 
 /// Time and rank filters of the stats tools, as the API's query parameters.
 #[derive(Default)]
@@ -55,6 +58,13 @@ pub fn round(x: f64, places: i32) -> f64 {
     (x * f).round() / f
 }
 
+/// The sources of an answer built with the catalog: `source` and the catalog's degraded ones.
+pub fn answer_sources(source: Source, cat: &Catalog) -> Vec<Source> {
+    std::iter::once(source)
+        .chain(cat.degraded_sources())
+        .collect()
+}
+
 /// `total / matches` rounded to 2 places; 0 without matches.
 #[expect(clippy::cast_precision_loss, reason = "counts are far below 2^52")]
 pub fn per(total: i64, matches: i64) -> f64 {
@@ -78,6 +88,39 @@ pub fn take(count: u32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An answer lists its own source first, then only the catalog's stale or failed ones.
+    #[test]
+    fn answer_sources_add_the_degraded_catalog_parts() {
+        let source = |url: &str, stale| Source {
+            url: url.to_owned(),
+            fetched_at: 1,
+            from_cache: true,
+            stale,
+            error: None,
+        };
+        let failed = Source::failed(
+            &crate::problem::Problem::new(crate::problem::Kind::Unreachable, "down")
+                .with_instance("map"),
+        );
+        let cat = Catalog::test(&[]).with_sources(vec![
+            source("heroes", false),
+            source("items", true),
+            failed,
+        ]);
+        let urls: Vec<(String, bool, bool)> = answer_sources(source("own", false), &cat)
+            .into_iter()
+            .map(|s| (s.url, s.stale, s.error.is_some()))
+            .collect();
+        assert_eq!(
+            urls,
+            [
+                ("own".to_owned(), false, false),
+                ("items".to_owned(), true, false),
+                ("map".to_owned(), false, true),
+            ]
+        );
+    }
 
     #[test]
     fn query_starts_on_the_hour() {

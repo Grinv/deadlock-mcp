@@ -16,7 +16,7 @@ use crate::domain::outcome::{PlayerResult, player_result};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
 use crate::sources::api;
-use crate::tools::{Filters, id32, per, round, take, win_rate};
+use crate::tools::{Filters, answer_sources, id32, per, round, take, win_rate};
 
 const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 
@@ -50,9 +50,13 @@ pub fn search(query: &str) -> Result<Search> {
         });
     }
     let (found, source) = api::steam_search(q)?;
+    search_from(query, found, source)
+}
+
+/// The first 10 accounts a Steam name search found.
+fn search_from(query: &str, found: Vec<SteamProfile>, source: Source) -> Result<Search> {
     let players: Vec<Found> = found
         .into_iter()
-        .take(10)
         .filter_map(|p: SteamProfile| {
             Some(Found {
                 account_id: u32::try_from(p.account_id).ok()?,
@@ -60,6 +64,7 @@ pub fn search(query: &str) -> Result<Search> {
                 profile_url: Some(p.profileurl),
             })
         })
+        .take(10)
         .collect();
     if players.is_empty() {
         return Err(Problem::not_found(format!(
@@ -297,9 +302,7 @@ pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHe
             "the Deadlock API has no matches for account {account_id} in that time; check the id with player_search"
         )));
     }
-    let sources = std::iter::once(source)
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(source, &cat);
     Ok(heroes_from(&cat, account_id, limit, stats, sources))
 }
 
@@ -517,9 +520,7 @@ pub fn deaths_map(
         let _ = write!(query, "&hero_ids={h}");
     }
     let (cells, source) = api::kill_death_stats(&query)?;
-    let sources = std::iter::once(source)
-        .chain(cat.degraded_sources())
-        .collect();
+    let sources = answer_sources(source, &cat);
     Ok(deaths_map_from(
         &cat, account_id, hero_id, limit, &cells, sources,
     ))
@@ -605,6 +606,37 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn name_search_lists_ten_accounts() {
+        let profile = |id: i64, name: &str| -> SteamProfile {
+            serde_json::from_value(json!({
+                "account_id": id, "avatar": "", "avatarfull": "", "avatarmedium": "",
+                "countrycode": null, "friends": [], "last_team_avg_badge": null,
+                "last_updated": "", "matches_played_last_30d": 0, "personaname": name,
+                "profileurl": format!("https://steamcommunity.com/profiles/{id}/"), "realname": null,
+            }))
+            .unwrap()
+        };
+        let source = || Source::failed(&Problem::not_found("x"));
+        // An id outside u32 is dropped; hidden characters leave the name; at most 10 stay.
+        let mut found = vec![profile(-1, "bad"), profile(7, "Mi\u{200b}ka")];
+        found.extend((100..112).map(|id| profile(id, "same")));
+        let s = search_from("mika", found, source()).unwrap();
+        let ids: Vec<u32> = s.players.iter().map(|p| p.account_id).collect();
+        assert_eq!(ids, [7, 100, 101, 102, 103, 104, 105, 106, 107, 108]);
+        assert_eq!(s.players[0].steam_name.as_deref(), Some("Mika"));
+        assert_eq!(
+            s.players[0].profile_url.as_deref(),
+            Some("https://steamcommunity.com/profiles/7/")
+        );
+        assert_eq!(
+            search_from("nobody", Vec::new(), source())
+                .err()
+                .map(|e| e.message()),
+            Some("Not found: no Steam account named like \"nobody\" in the Deadlock API; try another spelling or the SteamID64".to_owned())
+        );
+    }
 
     #[test]
     fn search_reads_ids_and_profile_links() {
