@@ -154,12 +154,17 @@ impl DeadlockServer {
     }
 }
 
-/// `schema` with only the `format`s its JSON Schema version defines. schemars also writes Rust's
-/// integer sizes (`uint32`, `int64`, `double`...), which no standard defines, so clients can't use
-/// them and validators warn; the bounds that matter are in `minimum`/`maximum`.
+/// `schema` without schemars' `uint` formats (`uint32`, `uint64`, `uint` for `usize`...): no
+/// standard defines them, so clients can't use them, and Claude Code logs each one on every call
+/// it validates. The formats JSON Schema defines stay, and so do `OpenAPI`'s `int32`, `int64`,
+/// `float` and `double`, which validators know; bounds are in `minimum`/`maximum`.
 fn standard_formats(schema: &rmcp::model::JsonObject) -> rmcp::model::JsonObject {
+    let mut restrict = RestrictFormats::default();
+    restrict
+        .allowed_formats
+        .extend(["int32", "int64", "float", "double"].map(Into::into));
     let mut schema = schemars::Schema::from(schema.clone());
-    RestrictFormats::default().transform(&mut schema);
+    restrict.transform(&mut schema);
     schema.as_object().cloned().unwrap_or_default()
 }
 
@@ -279,13 +284,14 @@ mod tests {
                 "id": {"type": "integer", "format": "uint32", "minimum": 0},
                 "when": {"type": "string", "format": "date-time"}
             },
-            "$defs": {"Row": {"anyOf": [{"type": "number", "format": "double"}, {"type": "null"}]}},
+            "$defs": {"Row": {"anyOf": [{"type": "number", "format": "double"}, {"type": "null"}],
+                              "properties": {"at": {"type": "integer", "format": "uint64"}}}},
             "examples": [{"format": "uint32"}]
         });
         let serde_json::Value::Object(schema) = schema else {
             unreachable!()
         };
-        // Rust's sizes go, standard formats and data inside the schema stay.
+        // The uint formats go; standard and OpenAPI formats and data inside the schema stay.
         assert_eq!(
             serde_json::Value::Object(standard_formats(&schema)),
             serde_json::json!({
@@ -295,13 +301,14 @@ mod tests {
                     "id": {"type": "integer", "minimum": 0},
                     "when": {"type": "string", "format": "date-time"}
                 },
-                "$defs": {"Row": {"anyOf": [{"type": "number"}, {"type": "null"}]}},
+                "$defs": {"Row": {"anyOf": [{"type": "number", "format": "double"}, {"type": "null"}],
+                                  "properties": {"at": {"type": "integer"}}}},
                 "examples": [{"format": "uint32"}]
             })
         );
-        // No published schema keeps a format: none of ours is a standard one.
+        // No published schema keeps a uint format.
         let published = serde_json::to_string(&DeadlockServer::tools().list_all()).unwrap();
-        assert!(!published.contains("\"format\""), "a format is left");
+        assert!(!published.contains("\"uint"), "a uint format is left");
     }
 
     /// The README's tool table lists every tool.
