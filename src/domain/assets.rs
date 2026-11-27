@@ -58,6 +58,9 @@ fn degraded(s: &Source) -> bool {
     s.stale || s.error.is_some()
 }
 
+/// The subranks of every rank but the lowest, as rank names spell them.
+const SUBRANKS: [&str; 6] = ["I", "II", "III", "IV", "V", "VI"];
+
 /// How long an incomplete catalog is kept before the next call loads it again: long enough not to
 /// reload on every call while a source is down, short enough to recover within a session.
 const RETRY_INCOMPLETE: Duration = Duration::from_mins(5);
@@ -154,7 +157,6 @@ impl Catalog {
 
     /// `tier * 10 + subrank`, e.g. 116 = "Eternus VI"; 0 = unranked (Obscurus).
     pub fn rank(&self, badge: i64) -> String {
-        const SUBRANKS: [&str; 6] = ["I", "II", "III", "IV", "V", "VI"];
         let Some(tier) = self.ranks.get(&(badge / 10)) else {
             return format!("badge {badge}");
         };
@@ -163,6 +165,55 @@ impl Catalog {
             .and_then(|s| s.checked_sub(1))
             .and_then(|s| SUBRANKS.get(s));
         sub.map_or_else(|| tier.clone(), |s| format!("{tier} {s}"))
+    }
+
+    /// The lowest badge of a rank named as `rank` names it: "Ascendant" is Ascendant I (101),
+    /// "Ascendant III" is 103, "Obscurus" (unranked) is 0.
+    pub fn lowest_badge(&self, rank: &str) -> Result<u8> {
+        self.badge(rank, 1)
+    }
+
+    /// The highest badge of a rank named as `rank` names it: "Ascendant" is Ascendant VI (106).
+    pub fn highest_badge(&self, rank: &str) -> Result<u8> {
+        self.badge(rank, 6)
+    }
+
+    /// `tier * 10 + subrank`, with `subrank` when the name has none.
+    fn badge(&self, rank: &str, subrank: u8) -> Result<u8> {
+        let unknown = || {
+            let mut tiers: Vec<(&i64, &String)> = self.ranks.iter().collect();
+            tiers.sort();
+            let names: Vec<&str> = tiers.into_iter().map(|(_, n)| n.as_str()).collect();
+            Problem::invalid_argument(format!(
+                "no rank named {rank:?}; the ranks from lowest are {}, each but the first with \
+                 subranks I to VI (e.g. \"Ascendant III\")",
+                names.join(", ")
+            ))
+        };
+        let (name, sub) = match rank.trim().rsplit_once(char::is_whitespace) {
+            Some((name, sub)) => {
+                let sub = SUBRANKS
+                    .iter()
+                    .position(|s| s.eq_ignore_ascii_case(sub))
+                    .and_then(|i| u8::try_from(i + 1).ok())
+                    .or_else(|| sub.parse::<u8>().ok().filter(|n| (1..=6).contains(n)))
+                    .ok_or_else(unknown)?;
+                (name.trim(), Some(sub))
+            }
+            None => (rank.trim(), None),
+        };
+        let tier = self
+            .ranks
+            .iter()
+            .find(|(_, n)| n.eq_ignore_ascii_case(name))
+            .and_then(|(&tier, _)| u8::try_from(tier).ok())
+            .ok_or_else(unknown)?;
+        match (tier, sub) {
+            (0, None) => Ok(0),
+            // Unranked has no subranks.
+            (0, Some(_)) => Err(unknown()),
+            (tier, sub) => Ok(tier * 10 + sub.unwrap_or(subrank)),
+        }
     }
 
     pub fn lane(&self, id: u32) -> Lane {
@@ -380,6 +431,11 @@ mod tests {
             self
         }
 
+        pub fn with_ranks(mut self, ranks: &[(i64, &str)]) -> Self {
+            self.ranks = ranks.iter().map(|&(t, n)| (t, n.to_owned())).collect();
+            self
+        }
+
         pub fn with_items(mut self, items: Vec<Item>) -> Self {
             self.items = items.into_iter().map(|i| (i.id, i)).collect();
             self
@@ -393,6 +449,31 @@ mod tests {
         pub fn with_accolades(mut self, accolades: Vec<api::Accolade>) -> Self {
             self.accolades = accolades_by_id(accolades);
             self
+        }
+    }
+
+    #[test]
+    fn rank_names_give_badges() {
+        let cat =
+            Catalog::test(&[]).with_ranks(&[(0, "Obscurus"), (9, "Phantom"), (10, "Ascendant")]);
+        // A whole rank spans subranks I to VI; a subrank is one badge; names ignore case.
+        assert_eq!(cat.lowest_badge("Ascendant").unwrap(), 101);
+        assert_eq!(cat.highest_badge(" ascendant ").unwrap(), 106);
+        assert_eq!(cat.lowest_badge("Phantom iii").unwrap(), 93);
+        assert_eq!(cat.highest_badge("Phantom 3").unwrap(), 93);
+        assert_eq!(cat.lowest_badge("Obscurus").unwrap(), 0);
+        assert_eq!(cat.highest_badge("Obscurus").unwrap(), 0);
+        // The names the catalog gives back are the names it takes.
+        assert_eq!(cat.lowest_badge(&cat.rank(104)).unwrap(), 104);
+        for bad in ["Gold", "Ascendant VII", "Ascendant 0", "Obscurus I", ""] {
+            assert_eq!(
+                cat.lowest_badge(bad).unwrap_err().message(),
+                format!(
+                    "Invalid argument: no rank named {bad:?}; the ranks from lowest are Obscurus, \
+                     Phantom, Ascendant, each but the first with subranks I to VI (e.g. \
+                     \"Ascendant III\")"
+                )
+            );
         }
     }
 

@@ -23,6 +23,33 @@ pub struct Filters {
     pub days: Option<u32>,
 }
 
+/// The rank and time filters of a meta tool as the model gives them: ranks by name, as
+/// `player_overview` shows them.
+pub struct MetaFilters {
+    pub min_rank: Option<String>,
+    pub max_rank: Option<String>,
+    pub days: u32,
+}
+
+impl MetaFilters {
+    /// The API's badge filters for the named ranks: a rank without a subrank spans all six.
+    pub fn to_filters(&self, cat: &Catalog) -> Result<Filters> {
+        Ok(Filters {
+            min_badge: self
+                .min_rank
+                .as_deref()
+                .map(|r| cat.lowest_badge(r))
+                .transpose()?,
+            max_badge: self
+                .max_rank
+                .as_deref()
+                .map(|r| cat.highest_badge(r))
+                .transpose()?,
+            days: Some(self.days),
+        })
+    }
+}
+
 impl Filters {
     /// `&key=value` pairs. The start time is rounded down to the hour, so repeated calls hit the
     /// local cache and the API's own one-hour cache.

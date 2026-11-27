@@ -9,7 +9,7 @@ use serde::Deserialize;
 use super::{DeadlockServer, default_ten, default_window_days, input_schema, parse, run};
 use crate::contracts::api::{PlayerStatsMetricsKey, Region};
 use crate::tools::meta::HeroSort;
-use crate::tools::{Filters, game, meta};
+use crate::tools::{MetaFilters, game, meta};
 
 const fn default_hundred() -> u32 {
     100
@@ -36,13 +36,13 @@ pub struct BuildsArgs {
 #[derive(Deserialize, JsonSchema, garde::Validate)]
 #[serde(deny_unknown_fields)]
 pub struct HeroStatsArgs {
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
@@ -71,13 +71,13 @@ pub struct HeroItemsArgs {
     #[serde(default)]
     #[garde(length(max = 5), inner(length(chars, min = 1, max = 50)))]
     pub enemy_heroes: Vec<String>,
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
@@ -102,13 +102,13 @@ pub struct HeroPairArgs {
     #[serde(default)]
     #[garde(skip)]
     pub same_lane: bool,
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
@@ -129,13 +129,13 @@ pub struct AbilityOrderArgs {
     /// The hero: a name (or a unique part of it) or a hero id.
     #[garde(length(chars, min = 1, max = 50))]
     pub hero: String,
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
@@ -184,13 +184,13 @@ pub struct PerformanceCurveArgs {
     /// left out.
     #[garde(inner(length(chars, min = 1, max = 50)))]
     pub hero: Option<String>,
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
@@ -209,24 +209,24 @@ pub struct StatPercentilesArgs {
     #[serde(default)]
     #[garde(length(max = 32))]
     pub metrics: Vec<PlayerStatsMetricsKey>,
-    /// Only matches whose players' average rank badge is at least this: tier * 10 + subrank, e.g.
-    /// 116 = Eternus VI, 0 = unranked. A player's badge is behind `player_overview`'s rank.
-    #[garde(inner(range(max = 116)))]
-    pub min_badge: Option<u8>,
-    /// Only matches whose average rank badge is at most this (same scale as `min_badge`).
-    #[garde(inner(range(max = 116)))]
-    pub max_badge: Option<u8>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
     /// Only matches of the last this many days.
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
     pub days: u32,
 }
 
-fn filters(min_badge: Option<u8>, max_badge: Option<u8>, days: u32) -> Filters {
-    Filters {
-        min_badge,
-        max_badge,
-        days: Some(days),
+fn filters(min_rank: Option<String>, max_rank: Option<String>, days: u32) -> MetaFilters {
+    MetaFilters {
+        min_rank,
+        max_rank,
+        days,
     }
 }
 
@@ -257,7 +257,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::HeroStats>, CallToolResult> {
         let a: HeroStatsArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::hero_stats(&f, a.min_matches, a.sort, a.limit)).await
     }
 
@@ -272,7 +272,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::HeroItems>, CallToolResult> {
         let a: HeroItemsArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::hero_items(&a.hero, &a.enemy_heroes, &f, a.min_matches, a.limit)).await
     }
 
@@ -287,7 +287,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::Counters>, CallToolResult> {
         let a: HeroPairArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::hero_counters(&a.hero, &f, a.min_matches, a.same_lane, a.limit)).await
     }
 
@@ -302,7 +302,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::Synergies>, CallToolResult> {
         let a: HeroPairArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::hero_synergies(&a.hero, &f, a.min_matches, a.same_lane, a.limit)).await
     }
 
@@ -317,7 +317,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::AbilityOrders>, CallToolResult> {
         let a: AbilityOrderArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::ability_order(&a.hero, &f, a.min_matches, a.limit)).await
     }
 
@@ -333,7 +333,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::PerformanceCurve>, CallToolResult> {
         let a: PerformanceCurveArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::performance_curve(a.hero.as_deref(), &f)).await
     }
 
@@ -349,7 +349,7 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::StatPercentiles>, CallToolResult> {
         let a: StatPercentilesArgs = parse(raw)?;
-        let f = filters(a.min_badge, a.max_badge, a.days);
+        let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::stat_percentiles(a.hero.as_deref(), &a.metrics, &f)).await
     }
 
@@ -406,12 +406,24 @@ mod tests {
     /// A meta tool called without `days` reads the last 30 days, not all of the API's history.
     #[test]
     fn meta_window_defaults_to_30_days() {
-        let args: HeroStatsArgs = serde_json::from_value(serde_json::json!({})).unwrap();
+        let args: HeroStatsArgs = serde_json::from_value(
+            serde_json::json!({"min_rank": "ascendant", "max_rank": "Eternus"}),
+        )
+        .unwrap();
         assert_eq!(args.days, 30);
+        // Rank names become the API's badges: a whole rank spans its six subranks.
+        let cat = crate::domain::assets::Catalog::test(&[]).with_ranks(&[
+            (0, "Obscurus"),
+            (10, "Ascendant"),
+            (11, "Eternus"),
+        ]);
+        let query = filters(args.min_rank, args.max_rank, args.days)
+            .to_filters(&cat)
+            .unwrap()
+            .query();
         assert!(
-            filters(None, None, args.days)
-                .query()
-                .contains("&min_unix_timestamp=")
+            query.starts_with("&min_average_badge=101&max_average_badge=116&min_unix_timestamp="),
+            "{query}"
         );
     }
 }

@@ -135,8 +135,10 @@ pub struct HeroRecord {
 pub struct Overview {
     pub account_id: u32,
     pub steam_name: Option<String>,
-    /// The rank badge, e.g. "Seeker III"; "Obscurus" when unranked.
+    /// The rank badge, e.g. "Seeker III"; "Obscurus" when unranked. The meta tools' `min_rank`
+    /// and `max_rank` take it as it is.
     pub rank: String,
+    /// Every match of the player's Steam match history.
     pub matches: u32,
     pub wins: u32,
     pub losses: u32,
@@ -285,7 +287,8 @@ pub struct PlayerHero {
 #[derive(Serialize, JsonSchema)]
 pub struct PlayerHeroes {
     pub account_id: u32,
-    /// Matches over all heroes in the time range.
+    /// Matches over all heroes in the time range, counting only the matches the Deadlock API has
+    /// the full data of, so fewer than `player_overview`'s history.
     pub matches: i64,
     /// Heroes played, most played first.
     pub heroes: Vec<PlayerHero>,
@@ -496,7 +499,8 @@ pub struct Hotspot {
 pub struct DeathsMap {
     pub account_id: u32,
     pub hero: Option<String>,
-    /// The player's deaths and kills in the time range.
+    /// The player's deaths and kills in the time range, in the matches the Deadlock API has the
+    /// full data of.
     pub deaths: i64,
     pub kills: i64,
     /// Where the player died most, most deaths first.

@@ -26,8 +26,8 @@ Each tool answers one question; the assistant combines them.
 | Meta | `hero_stats`, `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `performance_curve` (the average net worth, K/D/A and souls by source over a match), `stat_percentiles` (where a match's stats rank), `builds`, `leaderboard`, `patches` |
 | Game | `game_lookup` (heroes, abilities and items with their tooltips), `wiki_search`, `wiki_page` |
 
-Meta tools take a rank range (`min_badge`, `max_badge`) and a period (`days`). Every win rate comes
-with the number of matches behind it, and small samples are left out.
+Meta tools take a rank range by name (`min_rank`, `max_rank`, e.g. "Ascendant" or "Eternus III")
+and a period (`days`). Every win rate comes with the number of matches behind it, and small samples are left out.
 
 A player's `result` is their own. When the game voids a match for a player, usually because a
 teammate left, it is `not_scored`; a leaver's match is a loss even if their team won.

@@ -148,6 +148,7 @@ impl DeadlockServer {
     }
 
     /// A player's stats per hero: matches, win rate, K/D/A per match, souls and damage per minute.
+    /// Only the matches the Deadlock API has the full data of, so fewer than `player_overview`.
     #[tool(
         title = "Player's heroes",
         input_schema = input_schema::<PlayerHeroesArgs>(),

@@ -16,7 +16,7 @@ All notable changes to this project are documented here. The format is based on
   their matches.
 - Matches: summary of all twelve players, one player's match in depth (souls by source, unspent
   souls, deaths with killers, purchases, permanent buffs) and the soul lead per lane.
-- Meta by rank range and period: hero win and pick rates, items, counters, synergies, ability
+- Meta by rank range (rank names as `player_overview` gives them, e.g. "Ascendant") and period: hero win and pick rates, items, counters, synergies, ability
   orders, in-game builds, leaderboards and patch notes. Win rates come with their match counts.
 - Game knowledge: heroes, abilities and items with their tooltips, and Deadlock Wiki search and
   pages, lore included.

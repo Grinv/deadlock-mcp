@@ -39,8 +39,8 @@ runs the API's ingest tool; without it the API may miss some of their matches, s
 - The meta over all players: hero_stats (win and pick rate per hero), and for one hero hero_items (shop items), hero_counters \
 (enemies), hero_synergies (teammates) and ability_order. performance_curve gives the average net worth, K/D/A and \
 souls by source at each stats snapshot of a match; stat_percentiles where a match's per-match stats (souls per minute, \
-K/D/A, damage, accuracy...) rank; its percentiles rank single matches, not players. Filter them to a player's rank with min_badge/max_badge (the badge \
-behind player_overview's rank) and say how many matches a rate rests on; small samples mislead.
+K/D/A, damage, accuracy...) rank; its percentiles rank single matches, not players. Filter them to a player's rank with min_rank/max_rank \
+(rank names as player_overview gives them, e.g. \"Ascendant\" or \"Eternus III\") and say how many matches a rate rests on; small samples mislead.
 - builds lists in-game builds of a hero by popularity; leaderboard the top players of a region; patches the patch notes \
 (pass a patch's link for its text) to tell whether a stat predates a balance change.
 - game_lookup gives ability and item tooltips: description, what each ability upgrade adds, cooldowns and other values.
@@ -52,7 +52,7 @@ const REVIEW_STEPS: &str = "\
 2. Call match_player and match_lanes; call match_summary for the whole lobby.
 3. Explain the result (and why it wasn't scored, if so), how the lane went, where the souls came from, \
 how many souls sat unspent compared with the lobby, where and to whom they died, and what they bought when.
-4. Compare with the meta at the player's rank (min_badge/max_badge around their badge): hero_items for their hero, \
+4. Compare with the meta at the player's rank (min_rank/max_rank: their rank as player_overview names it): hero_items for their hero, \
 and against the enemy heroes of this match (enemy_heroes); ability_order for their skill order; hero_counters \
 for their lane opponent. Mention the match counts behind the rates.
 5. Compare their net worth over time (match_player) with performance_curve for their hero and rank, \

@@ -22,7 +22,9 @@ use crate::http::Source;
 use crate::problem::Result;
 use crate::sources::api;
 use crate::tools::player::steam_names;
-use crate::tools::{Filters, answer_sources, hero_filter, id32, per, round, take, win_rate};
+use crate::tools::{
+    Filters, MetaFilters, answer_sources, hero_filter, id32, per, round, take, win_rate,
+};
 
 /// Win rate of a row for sorting; rows without matches sort last.
 fn rate(wins: i64, matches: i64) -> f64 {
@@ -71,12 +73,13 @@ pub struct HeroStats {
 }
 
 pub fn hero_stats(
-    filters: &Filters,
+    filters: &MetaFilters,
     min_matches: u32,
     sort: HeroSort,
     limit: u32,
 ) -> Result<HeroStats> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let (rows, source) = api::hero_stats(&filters.query())?;
     let sources = answer_sources([source], &cat);
     Ok(hero_stats_from(
@@ -156,11 +159,12 @@ pub struct HeroItems {
 pub fn hero_items(
     hero: &str,
     enemy_heroes: &[String],
-    filters: &Filters,
+    filters: &MetaFilters,
     min_matches: u32,
     limit: u32,
 ) -> Result<HeroItems> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
     let enemies = enemy_heroes
         .iter()
@@ -285,14 +289,15 @@ pub struct Counters {
 
 pub fn hero_counters(
     hero: &str,
-    filters: &Filters,
+    filters: &MetaFilters,
     min_matches: u32,
     same_lane: bool,
     limit: u32,
 ) -> Result<Counters> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
-    let (rows, source) = api::hero_counter_stats(&pair_query(filters, min_matches, same_lane))?;
+    let (rows, source) = api::hero_counter_stats(&pair_query(&filters, min_matches, same_lane))?;
     let sources = answer_sources([source], &cat);
     Ok(hero_counters_from(
         &cat, hero_id, same_lane, limit, &rows, sources,
@@ -336,14 +341,15 @@ pub struct Synergies {
 
 pub fn hero_synergies(
     hero: &str,
-    filters: &Filters,
+    filters: &MetaFilters,
     min_matches: u32,
     same_lane: bool,
     limit: u32,
 ) -> Result<Synergies> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
-    let (rows, source) = api::hero_synergy_stats(&pair_query(filters, min_matches, same_lane))?;
+    let (rows, source) = api::hero_synergy_stats(&pair_query(&filters, min_matches, same_lane))?;
     let sources = answer_sources([source], &cat);
     Ok(hero_synergies_from(
         &cat, hero_id, same_lane, limit, &rows, sources,
@@ -404,11 +410,12 @@ pub struct AbilityOrders {
 
 pub fn ability_order(
     hero: &str,
-    filters: &Filters,
+    filters: &MetaFilters,
     min_matches: u32,
     limit: u32,
 ) -> Result<AbilityOrders> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let hero_id = cat.find_hero(hero)?;
     let query = format!("&min_matches={min_matches}{}", filters.query());
     let (rows, source) = api::ability_order_stats(hero_id, &query)?;
@@ -607,8 +614,9 @@ pub struct PerformanceCurve {
     pub sources: Vec<Source>,
 }
 
-pub fn performance_curve(hero: Option<&str>, filters: &Filters) -> Result<PerformanceCurve> {
+pub fn performance_curve(hero: Option<&str>, filters: &MetaFilters) -> Result<PerformanceCurve> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let (hero_query, hero) = hero_filter(&cat, hero)?;
     let (rows, source) = api::performance_curve(&format!("{hero_query}{}", filters.query()))?;
     Ok(performance_curve_from(
@@ -764,9 +772,10 @@ pub struct StatPercentiles {
 pub fn stat_percentiles(
     hero: Option<&str>,
     metrics: &[Metric],
-    filters: &Filters,
+    filters: &MetaFilters,
 ) -> Result<StatPercentiles> {
     let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
     let (mut query, hero) = hero_filter(&cat, hero)?;
     let metrics = if metrics.is_empty() {
         &DEFAULT_METRICS[..]
