@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -48,9 +49,21 @@ pub struct Catalog {
     /// End-of-match awards by id.
     accolades: HashMap<u32, api::Accolade>,
     pub sources: Vec<Source>,
+    /// When to load an incomplete catalog (a part failed or came from a stale copy) again;
+    /// `None` when complete.
+    retry_at: Option<Instant>,
 }
 
+/// How long an incomplete catalog is kept before the next call loads it again: long enough not to
+/// reload on every call while a source is down, short enough to recover within a session.
+const RETRY_INCOMPLETE: Duration = Duration::from_mins(5);
+
 impl Catalog {
+    /// Whether the cached catalog still serves `version` at `now`.
+    fn reusable(&self, version: u32, now: Instant) -> bool {
+        self.version == version && self.retry_at.is_none_or(|at| now < at)
+    }
+
     pub fn hero(&self, id: u32) -> String {
         self.heroes
             .get(&id)
@@ -202,7 +215,10 @@ pub fn catalog() -> Result<Arc<Catalog>> {
     let mut guard = CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(catalog) = guard.as_ref().filter(|c| c.version == version) {
+    if let Some(catalog) = guard
+        .as_ref()
+        .filter(|c| c.reusable(version, Instant::now()))
+    {
         return Ok(Arc::clone(catalog));
     }
     let catalog = Arc::new(load(version)?);
@@ -212,6 +228,7 @@ pub fn catalog() -> Result<Arc<Catalog>> {
 
 fn load(version: u32) -> Result<Catalog> {
     let mut sources = Vec::new();
+    let mut complete = true;
     let (heroes, s) = source::heroes(version)?;
     sources.push(s);
     let mut hero_info = HashMap::new();
@@ -270,6 +287,7 @@ fn load(version: u32) -> Result<Catalog> {
         }
         Err(problem) => {
             eprintln!("deadlock-mcp: map: {}", problem.message());
+            complete = false;
             Vec::new()
         }
     };
@@ -283,6 +301,7 @@ fn load(version: u32) -> Result<Catalog> {
         }
         Err(problem) => {
             eprintln!("deadlock-mcp: accolades: {}", problem.message());
+            complete = false;
             HashMap::new()
         }
     };
@@ -295,6 +314,8 @@ fn load(version: u32) -> Result<Catalog> {
         lanes,
         landmarks,
         accolades,
+        retry_at: (!complete || sources.iter().any(|s| s.stale))
+            .then(|| Instant::now() + RETRY_INCOMPLETE),
         sources,
     })
 }
@@ -314,7 +335,20 @@ mod tests {
             landmarks: Vec::new(),
             accolades: HashMap::new(),
             sources: Vec::new(),
+            retry_at: None,
         }
+    }
+
+    /// A complete catalog is kept for its version; an incomplete one only until its retry time.
+    #[test]
+    fn incomplete_catalog_is_loaded_again() {
+        let now = Instant::now();
+        let mut cat = catalog(&[]);
+        assert!(cat.reusable(1, now));
+        assert!(!cat.reusable(2, now));
+        cat.retry_at = Some(now + RETRY_INCOMPLETE);
+        assert!(cat.reusable(1, now));
+        assert!(!cat.reusable(1, now + RETRY_INCOMPLETE));
     }
 
     #[test]
