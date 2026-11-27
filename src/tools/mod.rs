@@ -21,6 +21,10 @@ impl Filters {
     /// `&key=value` pairs. The start time is rounded down to the hour, so repeated calls hit the
     /// local cache and the API's own one-hour cache.
     pub fn query(&self) -> String {
+        self.query_at(crate::http::unix_now())
+    }
+
+    fn query_at(&self, now: u64) -> String {
         let mut q = String::new();
         if let Some(b) = self.min_badge {
             let _ = write!(q, "&min_average_badge={b}");
@@ -29,7 +33,6 @@ impl Filters {
             let _ = write!(q, "&max_average_badge={b}");
         }
         if let Some(days) = self.days {
-            let now = crate::http::unix_now();
             let since = (now / 3600).saturating_sub(u64::from(days) * 24) * 3600;
             let _ = write!(q, "&min_unix_timestamp={since}");
         }
@@ -70,4 +73,24 @@ pub fn id32(id: i64) -> u32 {
 /// `count` as a `usize` for `take`.
 pub fn take(count: u32) -> usize {
     usize::try_from(count).unwrap_or(usize::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_starts_on_the_hour() {
+        let filters = Filters {
+            min_badge: Some(71),
+            max_badge: Some(116),
+            days: Some(2),
+        };
+        // 2026-11-27 13:59:59 UTC: the window starts at 13:00 two days before.
+        assert_eq!(
+            filters.query_at(1_795_787_999),
+            "&min_average_badge=71&max_average_badge=116&min_unix_timestamp=1795611600"
+        );
+        assert_eq!(Filters::default().query_at(1_795_787_999), "");
+    }
 }
