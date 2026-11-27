@@ -52,18 +52,41 @@ with the meta. Its resources are `deadlock://heroes`, `deadlock://items` and one
 
 ## deadlock-mcp and the Deadlock API's own MCP server
 
-The Deadlock API runs an MCP server of its own at `https://api.deadlock-api.com/v1/mcp`. It gives
-an assistant read-only SQL (DuckDB) over hourly snapshots of the whole database, plus lists of
-heroes, items, patches and ranked seasons. The two do different jobs and work well side by side.
+The Deadlock API runs an MCP server of its own at `https://api.deadlock-api.com/v1/mcp`: read-only
+SQL (DuckDB) over hourly snapshots of its database, plus lists of heroes, items, patches and ranked
+seasons. It can answer questions nobody wrote a tool for. deadlock-mcp answers the common ones
+directly, with the data already read for the assistant:
+
+- A player is found by Steam name, SteamID64 or profile link (`player_search`). When several
+  accounts share a name, up to ten are listed for the assistant to choose from.
+- Answers use the game's terms. Ranks go in and come out by name ("Ascendant", "Eternus III").
+  Lanes and the objective nearest each death are named from the game files. An award says whether
+  it was earned and at which threshold.
+- A player's result is the one the game recorded for them, not their team's: when a teammate leaves,
+  the match doesn't count for the others, and a leaver loses even when the team wins.
+- Numbers come with what they mean. Every win rate has its match count and small samples are left
+  out; a counter's win rate says whose it is; a new hero's pick rate counts only the days since its
+  release.
+- A question is usually one call. "Who counters Haze at Ascendant?" is one `hero_counters` call; a
+  match review is `match_player`, `match_summary` and `match_lanes`, with the steps in the
+  `review_match` prompt. With SQL the assistant first has to learn the schema and its pitfalls, such
+  as voided matches and the rows that appear twice.
+- Answers hold only what the question needs: names rather than internal class names, plain text
+  rather than HTML, no image links. `game_lookup` for Haze is 1,620 characters with the abilities by
+  name; the Deadlock API server's details of Haze add 17 image links, a 3D model, a 36-row level
+  table and the abilities as class names (`ability_sleep_dagger`).
+- Mechanics and lore come from the Deadlock Wiki, and item and ability tooltips keep their values.
+- A failure shows in the answer: a stale or missing source is marked, and a wrong argument comes back
+  with what was expected (an unknown rank lists the ranks).
 
 | | deadlock-mcp | The Deadlock API's MCP server |
 |---|---|---|
 | How the assistant asks | One tool per question, with checked arguments | It writes SQL against the database schema |
-| A player's match | Ready answers: own result, souls by source, unspent souls, deaths with killers, lanes | Possible with SQL, if the assistant knows the columns and pitfalls (such as voided matches) |
-| Meta and custom statistics | Common questions: hero and item win rates, counters, synergies, ability orders | Any aggregate over all matches |
+| A player's match | Ready answers: own result, souls by source, unspent souls, deaths with killers and places, awards, lanes | Possible with SQL, if the assistant knows the columns and pitfalls |
+| Meta and custom statistics | Common questions: hero and item win rates, counters, synergies, ability orders, stat percentiles | Any aggregate over all matches |
 | Freshness | The REST API's current answers | Snapshots refreshed hourly |
-| Limits | The REST API's rate limits | `execute_query`: 30 calls a minute, 400 a day |
-| Game knowledge | Wiki pages and lore, tooltips with values | Hero and item lists |
+| Limits | The REST API's rate limits | `execute_query`: 30 calls a minute, 400 a day, 1,024 rows and 50 KB per result |
+| Game knowledge | Wiki pages and lore, tooltips with values, patch notes | Hero, item, patch and ranked-season lists, patch notes |
 | Runs | Locally, over stdio | Hosted, over HTTP |
 
 ## Download and use
