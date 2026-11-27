@@ -1,0 +1,188 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: "1.100"
+  # Linux binaries are built here: musl links them statically, so they run on any distribution
+  # whatever its glibc. Pinned to the multi-arch index (amd64, arm64) the release was tested with.
+  RUST_ALPINE: docker.io/library/rust:1.100-alpine@sha256:8d0e82abfdf9a38071e07cabc5afba4ddbe077631a80e4e742a760c38beadc33
+
+jobs:
+  # The whole CI on the tagged commit: a release only ships what passed it.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  linux:
+    needs: ci
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build (musl, static)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "$RUST_ALPINE" \
+            sh -c 'apk add --no-cache musl-dev && cargo build --release --locked'
+          mkdir dist
+          cp target/release/deadlock-mcp "dist/deadlock-mcp-${{ matrix.arch }}"
+          file "dist/deadlock-mcp-${{ matrix.arch }}" | tee /dev/stderr | grep -q 'static'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  # One universal binary: MCPB picks a command per OS, not per CPU.
+  macos:
+    needs: ci
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+          rustup target add --toolchain "$RUSTUP_TOOLCHAIN" aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build (arm64 + x86_64, universal)
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir dist
+          lipo -create -output dist/deadlock-mcp \
+            target/aarch64-apple-darwin/release/deadlock-mcp \
+            target/x86_64-apple-darwin/release/deadlock-mcp
+          lipo -info dist/deadlock-mcp
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos
+          path: dist/
+          if-no-files-found: error
+
+  # x64 only: Windows on Arm runs it through its x64 emulation.
+  windows:
+    needs: ci
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "${{ env.RUSTUP_TOOLCHAIN }}" --profile minimal
+      - run: cargo build --release --locked
+      - shell: bash
+        run: mkdir dist && cp target/release/deadlock-mcp.exe dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: dist/
+          if-no-files-found: error
+
+  # The .mcpb, the registry's server.json with its hash, and the release notes.
+  package:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      # A tag that doesn't match Cargo.toml would publish one version under another's name.
+      - name: Check the tag matches Cargo.toml
+        run: |
+          VERSION="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "deadlock-mcp") | .version')"
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml's version $VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      # CHANGELOG.md is the one source of the release notes: its section of this version.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" {flag = 1; next}
+            flag && /^## \[/ {exit}
+            flag {print}
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section; rename [Unreleased] before tagging"
+            exit 1
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: bundle/server
+          merge-multiple: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Pack deadlock-mcp.mcpb
+        run: |
+          cp manifest.json bundle/
+          # Artifacts drop the execute bit; mcpb pack stores the modes in the archive.
+          chmod +x bundle/server/*
+          ls -l bundle/server
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate bundle/manifest.json
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack bundle deadlock-mcp.mcpb
+      - name: server.json with the bundle's SHA-256
+        run: |
+          SHA="$(sha256sum deadlock-mcp.mcpb | cut -d' ' -f1)"
+          cargo xtask server-json "$SHA"
+          cp target/server.json server.json
+          GOT="$(jq -r '.packages[] | select(.registryType == "mcpb") | .fileSha256' server.json)"
+          if [ "$GOT" != "$SHA" ]; then
+            echo "::error::server.json's fileSha256 is '$GOT', the bundle's is '$SHA'"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            deadlock-mcp.mcpb
+            server.json
+            RELEASE_NOTES.md
+          if-no-files-found: error
+
+  # Holds the publishing rights and runs no project code: it only ships the package job's files.
+  # contents: write -> the GitHub Release; id-token: write -> MCP Registry login through OIDC.
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          files: deadlock-mcp.mcpb
+          body_path: RELEASE_NOTES.md
+      # Pinned to a version and its checksum: this step runs with live publishing credentials.
+      # To bump: take mcp-publisher_linux_amd64.tar.gz's digest from the release's assets at
+      # https://github.com/modelcontextprotocol/registry/releases and update both constants.
+      - name: Install mcp-publisher
+        run: |
+          MCP_PUBLISHER_VERSION="v1.8.16"
+          MCP_PUBLISHER_SHA256="6e2f799550cf843c6fd3350498d56cc49be3dc0af1e6237eb0e6435c7a9d5c05"
+          curl -sSfL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      # Reads ./server.json; the registry checks the .mcpb URL in it, so the release comes first.
+      - run: ./mcp-publisher publish
