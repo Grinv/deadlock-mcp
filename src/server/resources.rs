@@ -65,16 +65,13 @@ pub(super) fn resource_text(uri: &str) -> Result<String, ErrorData> {
     let json = match uri {
         "deadlock://heroes" => {
             let mut heroes: Vec<HeroResource> = cat
-                .heroes
-                .iter()
-                .map(|(&id, name)| {
-                    let mut abilities: Vec<String> = cat
-                        .items
-                        .values()
-                        .filter(|i| i.hero == Some(id) && i.kind == ItemKind::Ability)
+                .playable()
+                .map(|(id, name)| {
+                    let abilities: Vec<String> = cat
+                        .abilities(id)
+                        .into_iter()
                         .map(|i| i.name.clone())
                         .collect();
-                    abilities.sort();
                     HeroResource {
                         id,
                         name: name.clone(),
@@ -119,9 +116,8 @@ pub(super) fn hero_completions(typed: &str) -> Result<Vec<String>, ErrorData> {
     let cat = catalog().map_err(|p| resource_error(&p))?;
     let q = typed.trim().to_lowercase();
     let mut found: Vec<(u8, &String, u32)> = cat
-        .heroes
-        .iter()
-        .filter_map(|(&id, name)| {
+        .playable()
+        .filter_map(|(id, name)| {
             let n = name.to_lowercase();
             let rank = if n.starts_with(&q) {
                 0
@@ -146,11 +142,7 @@ pub(super) fn hero_completions(typed: &str) -> Result<Vec<String>, ErrorData> {
 /// Every playable hero as its own resource, so clients can show names.
 pub(super) fn hero_resources() -> Result<Vec<Resource>, ErrorData> {
     let cat = catalog().map_err(|p| resource_error(&p))?;
-    let mut heroes: Vec<(&u32, &String)> = cat
-        .heroes
-        .iter()
-        .filter(|(id, _)| cat.hero_info.get(id).is_some_and(|h| h.selectable))
-        .collect();
+    let mut heroes: Vec<(u32, &String)> = cat.playable().collect();
     heroes.sort_by(|a, b| a.1.cmp(b.1));
     Ok(heroes
         .into_iter()
@@ -158,7 +150,7 @@ pub(super) fn hero_resources() -> Result<Vec<Resource>, ErrorData> {
             let r = Resource::new(format!("deadlock://hero/{id}"), name.to_lowercase())
                 .with_title(name.clone())
                 .with_mime_type("application/json");
-            match cat.hero_info.get(id).and_then(|h| h.role.as_deref()) {
+            match cat.hero_info.get(&id).and_then(|h| h.role.as_deref()) {
                 Some(role) => r.with_description(role),
                 None => r,
             }

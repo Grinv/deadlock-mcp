@@ -10,13 +10,14 @@ use crate::contracts::valve::c_msg_match_meta_data_contents::{
     MatchInfo, PlayerStats, Players, Position,
 };
 use crate::domain::assets::{Catalog, Lane, catalog};
-use crate::domain::format::{date, mmss, plain};
+use crate::domain::format::{date, mmss};
 use crate::domain::items::ItemKind;
 use crate::domain::outcome::{PlayerResult, note, player_result};
 use crate::domain::terms::{game_mode_name, gold_source_name, match_mode_name, team_name};
 use crate::http::Source;
 use crate::problem::{Kind, Problem, Result};
 use crate::sources::api;
+use crate::tools::player::steam_names;
 
 const TEAMS: [ECitadelLobbyTeam; 2] = [
     ECitadelLobbyTeam::KECitadelLobbyTeamTeam0,
@@ -62,25 +63,6 @@ fn left_at(p: &Players) -> Option<String> {
     Some(p.abandon_match_time_s())
         .filter(|&s| s > 0)
         .map(|s| mmss(u64::from(s)))
-}
-
-/// Steam names of the match's players; an empty map when the lookup fails.
-fn steam_names(info: &MatchInfo) -> (HashMap<u32, String>, Option<Source>) {
-    let ids: Vec<u32> = info.players.iter().map(Players::account_id).collect();
-    match api::steam_profiles(&ids) {
-        Ok((profiles, source)) => {
-            let names = profiles
-                .into_iter()
-                .filter_map(|p| Some((u32::try_from(p.account_id).ok()?, plain(&p.personaname))))
-                .collect();
-            (names, Some(source))
-        }
-        // Names are a nicety: the answer stands without them, so log and go on.
-        Err(problem) => {
-            eprintln!("deadlock-mcp: steam names: {}", problem.message());
-            (HashMap::new(), None)
-        }
-    }
 }
 
 fn find_player(info: &MatchInfo, match_id: u64, account_id: u32) -> Result<&Players> {
@@ -144,7 +126,8 @@ pub struct Summary {
 pub fn summary(match_id: u64) -> Result<Summary> {
     let cat = catalog()?;
     let (info, source) = load(match_id)?;
-    let (names, names_source) = steam_names(&info);
+    let ids: Vec<u32> = info.players.iter().map(Players::account_id).collect();
+    let (names, names_source) = steam_names(&ids);
     let winner = info.winning_team();
     let teams = TEAMS
         .into_iter()

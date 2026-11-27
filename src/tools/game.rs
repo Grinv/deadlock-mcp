@@ -92,12 +92,7 @@ pub fn lookup(query: &str) -> Result<Lookup> {
     };
     let hero_entry = |id: u32, name: &str| {
         let info = cat.hero_info.get(&id);
-        let mut abilities: Vec<&Item> = cat
-            .items
-            .values()
-            .filter(|i| i.hero == Some(id) && i.kind == ItemKind::Ability)
-            .collect();
-        abilities.sort_by_key(|i| i.name.as_str());
+        let abilities = cat.abilities(id);
         Entry {
             id,
             name: name.to_owned(),
@@ -130,10 +125,9 @@ pub fn lookup(query: &str) -> Result<Lookup> {
             .collect()
     } else {
         let mut heroes: Vec<Entry> = cat
-            .heroes
-            .iter()
+            .playable()
             .filter(|(_, n)| n.to_lowercase().contains(&q))
-            .map(|(&id, n)| hero_entry(id, n))
+            .map(|(id, n)| hero_entry(id, n))
             .collect();
         let mut items: Vec<Entry> = cat
             .items
@@ -192,13 +186,7 @@ pub fn hero_card(id: u32) -> Result<Option<HeroCard>> {
         return Ok(None);
     };
     let info = cat.hero_info.get(&id);
-    // Abilities without tooltip text are helpers (melee, internal parts of a signature ability).
-    let mut abilities: Vec<&Item> = cat
-        .items
-        .values()
-        .filter(|i| i.hero == Some(id) && i.kind == ItemKind::Ability && i.description.is_some())
-        .collect();
-    abilities.sort_by_key(|i| i.name.as_str());
+    let abilities = cat.abilities(id);
     Ok(Some(HeroCard {
         id,
         name: name.clone(),

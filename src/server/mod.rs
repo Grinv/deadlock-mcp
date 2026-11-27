@@ -204,7 +204,7 @@ impl ServerHandler for DeadlockServer {
         Ok(ListResourcesResult::with_all_items(
             [
                 Resource::new("deadlock://heroes", "heroes")
-                    .with_description("Every hero with its id and abilities (JSON)")
+                    .with_description("Every playable hero with its id and abilities (JSON)")
                     .with_mime_type("application/json"),
                 Resource::new("deadlock://items", "items")
                     .with_description("Every shop item with id, slot, tier and cost (JSON)")

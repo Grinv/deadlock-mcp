@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::contracts::api;
 use crate::domain::format::strip_tags;
-use crate::domain::items::Item;
+use crate::domain::items::{Item, ItemKind};
 use crate::domain::map;
 use crate::http::Source;
 use crate::problem::{Problem, Result};
@@ -71,6 +71,29 @@ impl Catalog {
             .unwrap_or_else(|| format!("hero {id}"))
     }
 
+    /// The heroes players can pick. `heroes` also holds the game's unreleased and test heroes
+    /// (Graf, `hero_testhero`…), which only name ids.
+    pub fn playable(&self) -> impl Iterator<Item = (u32, &String)> {
+        self.heroes
+            .iter()
+            .filter(|(id, _)| self.hero_info.get(id).is_some_and(|h| h.selectable))
+            .map(|(&id, name)| (id, name))
+    }
+
+    /// A hero's abilities by name. Abilities without tooltip text are helpers (melee, internal
+    /// parts of a signature ability) and left out.
+    pub fn abilities(&self, hero: u32) -> Vec<&Item> {
+        let mut abilities: Vec<&Item> = self
+            .items
+            .values()
+            .filter(|i| {
+                i.hero == Some(hero) && i.kind == ItemKind::Ability && i.description.is_some()
+            })
+            .collect();
+        abilities.sort_by_key(|i| i.name.as_str());
+        abilities
+    }
+
     /// A hero by id or name: an exact name, else the only name starting with or containing the
     /// query (case-insensitive). Otherwise an `invalid_argument` naming up to 5 close heroes.
     pub fn find_hero(&self, query: &str) -> Result<u32> {
@@ -86,10 +109,9 @@ impl Catalog {
         }
         let named = |pred: &dyn Fn(&str) -> bool| -> Vec<u32> {
             let mut ids: Vec<u32> = self
-                .heroes
-                .iter()
+                .playable()
                 .filter(|(_, n)| pred(&n.to_lowercase()))
-                .map(|(&id, _)| id)
+                .map(|(id, _)| id)
                 .collect();
             ids.sort_unstable();
             ids
@@ -105,7 +127,7 @@ impl Catalog {
             return Ok(id);
         }
         let close: Vec<String> = if found.is_empty() {
-            let mut all: Vec<&String> = self.heroes.values().collect();
+            let mut all: Vec<&String> = self.playable().map(|(_, n)| n).collect();
             all.sort_by_key(|n| (distance(&n.to_lowercase(), &q), n.as_str()));
             all.into_iter().take(5).cloned().collect()
         } else {
@@ -328,7 +350,18 @@ mod tests {
         Catalog {
             version: 1,
             heroes: names.iter().map(|&(id, n)| (id, n.to_owned())).collect(),
-            hero_info: HashMap::new(),
+            hero_info: names
+                .iter()
+                .map(|&(id, _)| {
+                    let info = HeroInfo {
+                        role: None,
+                        playstyle: None,
+                        lore: None,
+                        selectable: id != 13,
+                    };
+                    (id, info)
+                })
+                .collect(),
             items: HashMap::new(),
             ranks: HashMap::new(),
             lanes: Vec::new(),
@@ -359,7 +392,11 @@ mod tests {
             (18, "Mo & Krill"),
             (20, "Ivy"),
             (21, "Kali"),
+            (13, "Graf"),
+            (14, "Graves"),
         ]);
+        // Graf is not playable: it neither matches nor makes "gra" ambiguous.
+        assert_eq!(cat.find_hero("gra").unwrap(), 14);
         assert_eq!(cat.find_hero("12").unwrap(), 12);
         assert_eq!(cat.find_hero(" kelvin ").unwrap(), 12);
         assert_eq!(cat.find_hero("mo").unwrap(), 18);
