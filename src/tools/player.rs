@@ -7,8 +7,10 @@ use std::fmt::Write as _;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::contracts::api::{PlayerMatchHistoryEntry, SteamProfile};
-use crate::domain::assets::catalog;
+use crate::contracts::api::{
+    EnemyStats, HeroStats, KillDeathStats, PlayerMatchHistoryEntry, RankResponse, SteamProfile,
+};
+use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{date, mmss, plain};
 use crate::domain::outcome::{PlayerResult, player_result};
 use crate::http::Source;
@@ -35,26 +37,7 @@ pub struct Search {
 /// else is searched as a Steam name.
 pub fn search(query: &str) -> Result<Search> {
     let q = query.trim();
-    let digits: String = q
-        .split("/profiles/")
-        .nth(1)
-        .unwrap_or(q)
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
-    if let Ok(n) = digits.parse::<u64>()
-        && (digits.len() == q.len() || q.contains("/profiles/"))
-    {
-        let id = if n >= STEAM64_BASE {
-            n - STEAM64_BASE
-        } else {
-            n
-        };
-        let Ok(account_id) = u32::try_from(id) else {
-            return Err(Problem::invalid_argument(format!(
-                "{query:?} is neither an account id nor a SteamID64"
-            )));
-        };
+    if let Some(account_id) = account_id_of(query)? {
         let (profiles, source) = api::steam_profiles(&[account_id])?;
         let p = profiles.into_iter().next();
         return Ok(Search {
@@ -65,11 +48,6 @@ pub fn search(query: &str) -> Result<Search> {
             }],
             sources: vec![source],
         });
-    }
-    if q.contains("steamcommunity.com/id/") {
-        return Err(Problem::invalid_argument(
-            "custom profile URLs (/id/...) can't be resolved without a Steam key; search by Steam name or give the SteamID64",
-        ));
     }
     let (found, source) = api::steam_search(q)?;
     let players: Vec<Found> = found
@@ -92,6 +70,40 @@ pub fn search(query: &str) -> Result<Search> {
         players,
         sources: vec![source],
     })
+}
+
+/// The account an account id, a `SteamID64` or a steamcommunity.com/profiles/ link names; `None`
+/// for a Steam name to search.
+fn account_id_of(query: &str) -> Result<Option<u32>> {
+    let q = query.trim();
+    let digits: String = q
+        .split("/profiles/")
+        .nth(1)
+        .unwrap_or(q)
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    if let Ok(n) = digits.parse::<u64>()
+        && (digits.len() == q.len() || q.contains("/profiles/"))
+    {
+        let id = if n >= STEAM64_BASE {
+            n - STEAM64_BASE
+        } else {
+            n
+        };
+        let Ok(account_id) = u32::try_from(id) else {
+            return Err(Problem::invalid_argument(format!(
+                "{query:?} is neither an account id nor a SteamID64"
+            )));
+        };
+        return Ok(Some(account_id));
+    }
+    if q.contains("steamcommunity.com/id/") {
+        return Err(Problem::invalid_argument(
+            "custom profile URLs (/id/...) can't be resolved without a Steam key; search by Steam name or give the SteamID64",
+        ));
+    }
+    Ok(None)
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -144,7 +156,25 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
     let (rank, rank_source) = api::rank(account_id)?;
     let (mut names, profile_source) = steam_names(&[account_id]);
     let steam_name = names.remove(&account_id);
+    let sources = [history_source, rank_source]
+        .into_iter()
+        .chain(profile_source)
+        .chain(cat.degraded_sources())
+        .collect();
+    Ok(overview_from(
+        &cat, account_id, recent, &history, &rank, steam_name, sources,
+    ))
+}
 
+fn overview_from(
+    cat: &Catalog,
+    account_id: u32,
+    recent: usize,
+    history: &[PlayerMatchHistoryEntry],
+    rank: &RankResponse,
+    steam_name: Option<String>,
+    sources: Vec<Source>,
+) -> Overview {
     let result_of = |m: &PlayerMatchHistoryEntry| {
         player_result(
             m.player_match_outcome,
@@ -154,7 +184,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
     let hero_of = |m: &PlayerMatchHistoryEntry| cat.hero(id32(m.hero_id.into()));
     let (mut wins, mut losses, mut not_scored) = (0, 0, 0);
     let mut heroes: HashMap<i32, (u32, u32, u32)> = HashMap::new();
-    for m in &history {
+    for m in history {
         let entry = heroes.entry(m.hero_id).or_default();
         entry.0 += 1;
         match result_of(m) {
@@ -166,7 +196,7 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
     let mut top: Vec<(i32, (u32, u32, u32))> = heroes.into_iter().collect();
     top.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(&b.0)));
     let scored = wins + losses;
-    Ok(Overview {
+    Overview {
         account_id,
         steam_name,
         rank: cat.rank(rank.badge),
@@ -200,12 +230,8 @@ pub fn overview(account_id: u32, recent: usize) -> Result<Overview> {
                 duration: mmss(u64::try_from(m.match_duration_s).unwrap_or_default()),
             })
             .collect(),
-        sources: [history_source, rank_source]
-            .into_iter()
-            .chain(profile_source)
-            .chain(cat.degraded_sources())
-            .collect(),
-    })
+        sources,
+    }
 }
 
 /// Steam names of `ids` in one request. Names only decorate an answer, so a failure goes into the
@@ -265,12 +291,25 @@ pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHe
         days,
         ..Filters::default()
     };
-    let (mut stats, source) = api::player_hero_stats(account_id, &filters.query())?;
+    let (stats, source) = api::player_hero_stats(account_id, &filters.query())?;
     if stats.is_empty() {
         return Err(Problem::not_found(format!(
             "the Deadlock API has no matches for account {account_id} in that time; check the id with player_search"
         )));
     }
+    let sources = std::iter::once(source)
+        .chain(cat.degraded_sources())
+        .collect();
+    Ok(heroes_from(&cat, account_id, limit, stats, sources))
+}
+
+fn heroes_from(
+    cat: &Catalog,
+    account_id: u32,
+    limit: u32,
+    mut stats: Vec<HeroStats>,
+    sources: Vec<Source>,
+) -> PlayerHeroes {
     stats.sort_by(|a, b| {
         b.matches_played
             .cmp(&a.matches_played)
@@ -296,15 +335,13 @@ pub fn heroes(account_id: u32, days: Option<u32>, limit: u32) -> Result<PlayerHe
             last_played: date(h.last_played),
         })
         .collect();
-    Ok(PlayerHeroes {
+    PlayerHeroes {
         account_id,
         matches,
         heroes,
         more_heroes,
-        sources: std::iter::once(source)
-            .chain(cat.degraded_sources())
-            .collect(),
-    })
+        sources,
+    }
 }
 
 /// Another player and how matches with or against them went.
@@ -401,6 +438,21 @@ pub fn enemies(
 ) -> Result<Enemies> {
     let (rows, source) = api::enemy_stats(account_id, &player_filters(days, min_matches))?;
     let row = |e: &&crate::contracts::api::EnemyStats| (id32(e.enemy_id), e.matches_played, e.wins);
+    let (met, lost) = met_and_lost(&rows, limit);
+    let mut ids: Vec<u32> = met.iter().chain(&lost).map(|e| id32(e.enemy_id)).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let (names, names_source) = steam_names(&ids);
+    Ok(Enemies {
+        account_id,
+        most_met: partners(met.iter().map(row), &names),
+        most_lost_to: partners(lost.iter().map(row), &names),
+        sources: std::iter::once(source).chain(names_source).collect(),
+    })
+}
+
+/// The opponents met most often and those lost to most often, at most `limit` of each.
+fn met_and_lost(rows: &[EnemyStats], limit: u32) -> (Vec<&EnemyStats>, Vec<&EnemyStats>) {
     let mut met: Vec<_> = rows.iter().collect();
     met.sort_by(|a, b| {
         b.matches_played
@@ -417,16 +469,7 @@ pub fn enemies(
             .then(a.enemy_id.cmp(&b.enemy_id))
     });
     lost.truncate(take(limit));
-    let mut ids: Vec<u32> = met.iter().chain(&lost).map(|e| id32(e.enemy_id)).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    let (names, names_source) = steam_names(&ids);
-    Ok(Enemies {
-        account_id,
-        most_met: partners(met.iter().map(row), &names),
-        most_lost_to: partners(lost.iter().map(row), &names),
-        sources: std::iter::once(source).chain(names_source).collect(),
-    })
+    (met, lost)
 }
 
 /// The API's raster cells are 128 map units; hotspots sum them into squares of this size.
@@ -474,8 +517,24 @@ pub fn deaths_map(
         let _ = write!(query, "&hero_ids={h}");
     }
     let (cells, source) = api::kill_death_stats(&query)?;
+    let sources = std::iter::once(source)
+        .chain(cat.degraded_sources())
+        .collect();
+    Ok(deaths_map_from(
+        &cat, account_id, hero_id, limit, &cells, sources,
+    ))
+}
+
+fn deaths_map_from(
+    cat: &Catalog,
+    account_id: u32,
+    hero_id: Option<u32>,
+    limit: u32,
+    cells: &[KillDeathStats],
+    sources: Vec<Source>,
+) -> DeathsMap {
     let mut squares: HashMap<(i32, i32), (i64, i64)> = HashMap::new();
-    for c in &cells {
+    for c in cells {
         let sq = squares
             .entry((
                 c.position_x.div_euclid(HOTSPOT),
@@ -507,17 +566,15 @@ pub fn deaths_map(
         v.truncate(take(limit));
         v
     };
-    Ok(DeathsMap {
+    DeathsMap {
         account_id,
         hero: hero_id.map(|h| cat.hero(h)),
         deaths: cells.iter().map(|c| c.deaths).sum(),
         kills: cells.iter().map(|c| c.kills).sum(),
         death_hotspots: spots(true),
         kill_hotspots: spots(false),
-        sources: std::iter::once(source)
-            .chain(cat.degraded_sources())
-            .collect(),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -541,4 +598,183 @@ pub fn ingest_status(account_id: u32) -> Result<IngestStatus> {
         window_days: s.window_days,
         sources: vec![source],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn search_reads_ids_and_profile_links() {
+        let id = |q: &str| account_id_of(q).map_err(|p| p.message());
+        assert_eq!(id("12345"), Ok(Some(12345)));
+        assert_eq!(id(" 76561197960266728 "), Ok(Some(1000)));
+        assert_eq!(id("76561197960265728"), Ok(Some(0)));
+        assert_eq!(
+            id("https://steamcommunity.com/profiles/76561197960266728/"),
+            Ok(Some(1000))
+        );
+        assert_eq!(id("steamcommunity.com/profiles/1000?l=en"), Ok(Some(1000)));
+        // Names, even with digits in them, are searched.
+        assert_eq!(id("Haze"), Ok(None));
+        assert_eq!(id("123abc"), Ok(None));
+        assert_eq!(id("https://steamcommunity.com/profiles/"), Ok(None));
+        assert_eq!(
+            id(" 99999999999"),
+            Err(
+                "Invalid argument: \" 99999999999\" is neither an account id nor a SteamID64"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            id("https://steamcommunity.com/id/someone/"),
+            Err("Invalid argument: custom profile URLs (/id/...) can't be resolved without a Steam key; search by Steam name or give the SteamID64".to_owned())
+        );
+    }
+
+    #[test]
+    fn overview_counts_wins_losses_and_unscored() {
+        let mut history: Vec<PlayerMatchHistoryEntry> =
+            serde_json::from_str(include_str!("../../contracts/fixtures/match_history.json"))
+                .unwrap();
+        // The fixture's matches: a loss on hero 63, a win on 72, a loss on 63; make the last one
+        // unscored.
+        history[2].player_match_outcome = 5;
+        let rank: RankResponse =
+            serde_json::from_str(include_str!("../../contracts/fixtures/rank.json")).unwrap();
+        let cat = Catalog::test(&[(63, "H63"), (72, "H72")]);
+        let o = overview_from(&cat, 1, 2, &history, &rank, None, Vec::new());
+        assert_eq!(
+            serde_json::to_value(&o).unwrap(),
+            json!({
+                "account_id": 1,
+                "steam_name": null,
+                "rank": "badge 36",
+                "matches": 3,
+                "wins": 1,
+                "losses": 1,
+                "not_scored": 1,
+                "win_rate": 0.5,
+                "top_heroes": [
+                    {"hero": "H63", "matches": 2, "wins": 0, "losses": 1},
+                    {"hero": "H72", "matches": 1, "wins": 1, "losses": 0},
+                ],
+                "recent": [
+                    {
+                        "match_id": 143_785_700,
+                        "date": "2026-11-26",
+                        "hero": "H63",
+                        "result": "loss",
+                        "kills": 7,
+                        "deaths": 12,
+                        "assists": 16,
+                        "net_worth": 55787,
+                        "duration": "49:29",
+                    },
+                    {
+                        "match_id": 143_768_397,
+                        "date": "2026-11-26",
+                        "hero": "H72",
+                        "result": "win",
+                        "kills": 16,
+                        "deaths": 8,
+                        "assists": 22,
+                        "net_worth": 62191,
+                        "duration": "39:53",
+                    },
+                ],
+                "sources": [],
+            })
+        );
+    }
+
+    #[test]
+    fn heroes_most_played_first() {
+        let stats: Vec<HeroStats> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/player_hero_stats.json"
+        ))
+        .unwrap();
+        let h = heroes_from(
+            &Catalog::test(&[(1, "H1"), (6, "H6")]),
+            1,
+            1,
+            stats,
+            Vec::new(),
+        );
+        let heroes: Vec<_> = h
+            .heroes
+            .iter()
+            .map(|h| (h.hero.as_str(), h.matches))
+            .collect();
+        assert_eq!((h.matches, heroes, h.more_heroes), (3, vec![("H6", 2)], 1));
+    }
+
+    #[test]
+    fn enemies_by_matches_and_by_losses() {
+        let rows: Vec<EnemyStats> = [
+            (1, 3, 4),
+            (2, 0, 2),
+            (3, 2, 4),
+            (4, 5, 5),
+            (5, 1, 3),
+            (6, 2, 4),
+        ]
+        .into_iter()
+        .map(|(enemy_id, wins, matches_played)| EnemyStats {
+            enemy_id,
+            matches: Vec::new(),
+            matches_played,
+            wins,
+        })
+        .collect();
+        let (met, lost) = met_and_lost(&rows, 5);
+        let ids = |v: Vec<&EnemyStats>| v.iter().map(|e| e.enemy_id).collect::<Vec<_>>();
+        // Most matches first; ties by id; the sixth (2 matches) is cut.
+        assert_eq!(ids(met), [4, 1, 3, 6, 5]);
+        // Most losses first, then the lowest win rate (0, 1/3, 2/4, 2/4), then id; never lost to 4.
+        assert_eq!(ids(lost), [2, 5, 3, 6, 1]);
+    }
+
+    #[test]
+    fn deaths_map_sums_squares() {
+        let mut cells: Vec<KillDeathStats> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/kill_death_stats.json"
+        ))
+        .unwrap();
+        let cell = |position_x, position_y, deaths| KillDeathStats {
+            deaths,
+            killer_team: 0,
+            kills: 0,
+            position_x,
+            position_y,
+        };
+        // In the square of the fixture's (-768, -3840), and one more death further east.
+        cells.push(cell(-700, -3500, 2));
+        cells.push(cell(5000, -100, 1));
+        let m = deaths_map_from(
+            &Catalog::test(&[(1, "Infernus")]),
+            1,
+            Some(1),
+            2,
+            &cells,
+            Vec::new(),
+        );
+        let spots = |v: &[Hotspot]| {
+            v.iter()
+                .map(|s| (s.x, s.y, s.deaths, s.kills))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            (m.hero.as_deref(), m.deaths, m.kills),
+            (Some("Infernus"), 5, 1)
+        );
+        // Centers of 1024-unit squares, rounded down also below zero; ties by position.
+        assert_eq!(
+            spots(&m.death_hotspots),
+            [(-512, -3584, 3, 0), (2560, 4608, 1, 0)]
+        );
+        assert_eq!(spots(&m.kill_hotspots), [(-4608, -1536, 0, 1)]);
+    }
 }
