@@ -1,5 +1,5 @@
 //! Distribution metadata, derived instead of hand-written: package facts come from `Cargo.toml`
-//! (via `cargo metadata`), tools and prompts from the server itself over stdio.
+//! (via `cargo metadata`), tools from the server itself over stdio.
 //!
 //! - `cargo xtask manifest` writes `manifest.json`, the MCP Bundle manifest
 //!   (<https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md>). It is committed; CI fails
@@ -20,8 +20,15 @@ const PACKAGE: &str = "deadlock-mcp";
 /// MCPB manifest version: 0.4 adds only the `uv` server type; 0.3 is the CLI's default and what
 /// clients have supported longest.
 const MANIFEST_VERSION: &str = "0.3";
-/// The bundle keeps the binary here; MCPB clients run it from the unpacked bundle.
+/// The bundle keeps the binaries here; MCPB clients run them from the unpacked bundle. This one is
+/// macOS's universal binary; Linux's are `-x86_64` and `-aarch64` next to it, Windows' `.exe`.
 const ENTRY_POINT: &str = "server/deadlock-mcp";
+/// macOS: Claude Desktop unpacks bundles with mode 0600, so it can't exec a binary in one
+/// (modelcontextprotocol/mcpb#294). It can exec `/bin/sh`, which restores the bit and hands over.
+const DARWIN_LAUNCH: &str = r#"chmod u+x "$0" && exec "$0""#;
+/// Linux: the same, and MCPB has no CPU field (modelcontextprotocol/mcpb#10), so `uname -m`
+/// picks the binary.
+const LINUX_LAUNCH: &str = r#"b="$0-$(uname -m)" && chmod u+x "$b" && exec "$b""#;
 const REGISTRY_SCHEMA: &str =
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
 /// The registry's limit on `description`.
@@ -31,7 +38,6 @@ struct Facts {
     package: Value,
     server: Value,
     tools: Vec<Value>,
-    prompts: Vec<Value>,
 }
 
 impl Facts {
@@ -45,12 +51,11 @@ impl Facts {
             )
             .into());
         }
-        let (server, tools, prompts) = surface(root)?;
+        let (server, tools) = surface(root)?;
         Ok(Self {
             package,
             server,
             tools,
-            prompts,
         })
     }
 
@@ -87,14 +92,23 @@ pub fn manifest(root: &Path) -> Result<()> {
                 "args": [],
                 "env": {},
                 "platform_overrides": {
+                    "darwin": {
+                        "command": "/bin/sh",
+                        "args": ["-c", DARWIN_LAUNCH, format!("${{__dirname}}/{ENTRY_POINT}")]
+                    },
+                    "linux": {
+                        "command": "/bin/sh",
+                        "args": ["-c", LINUX_LAUNCH, format!("${{__dirname}}/{ENTRY_POINT}")]
+                    },
                     "win32": { "command": format!("${{__dirname}}/{ENTRY_POINT}.exe") }
                 }
             }
         },
         "tools_generated": false,
         "tools": facts.tools,
-        "prompts_generated": false,
-        "prompts": facts.prompts,
+        // MCPB's static prompts can't hold review_match's optional `match_id`, so clients ask
+        // the server for its prompts.
+        "prompts_generated": true,
         "compatibility": { "platforms": ["darwin", "win32", "linux"] },
         "privacy_policies": [
             format!("{repository}/blob/main/PRIVACY.md"),
@@ -175,9 +189,8 @@ fn package(root: &Path) -> Result<Value> {
         .ok_or_else(|| format!("no package {PACKAGE} in cargo metadata").into())
 }
 
-/// The server's `serverInfo`, its tools as `{name, description}`, and its prompts as MCPB static
-/// prompts, all asked over stdio.
-fn surface(root: &Path) -> Result<(Value, Vec<Value>, Vec<Value>)> {
+/// The server's `serverInfo` and its tools as `{name, description}`, asked over stdio.
+fn surface(root: &Path) -> Result<(Value, Vec<Value>)> {
     let mut child = Command::new(env!("CARGO"))
         .args(["run", "--quiet", "--package", PACKAGE])
         .current_dir(root)
@@ -222,49 +235,7 @@ fn surface(root: &Path) -> Result<(Value, Vec<Value>, Vec<Value>)> {
         .iter()
         .map(|t| json!({ "name": t["name"], "description": t["description"] }))
         .collect();
-    let listed = call(false, "prompts/list", json!({}))?;
-    let mut prompts = Vec::new();
-    for p in listed["prompts"]
-        .as_array()
-        .ok_or("prompts/list has no prompts")?
-    {
-        // MCPB's static text substitutes only `${arguments.NAME}`, with no optional arguments:
-        // required ones become placeholders, optional ones keep the server's default.
-        let required: Vec<&str> = p["arguments"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|a| a["required"] == true)
-            .filter_map(|a| a["name"].as_str())
-            .collect();
-        let args: serde_json::Map<String, Value> = required
-            .iter()
-            .map(|n| {
-                (
-                    (*n).to_owned(),
-                    Value::String(format!("${{arguments.{n}}}")),
-                )
-            })
-            .collect();
-        let got = call(
-            false,
-            "prompts/get",
-            json!({ "name": p["name"], "arguments": args }),
-        )?;
-        let text: Vec<&str> = got["messages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|m| m["content"]["text"].as_str())
-            .collect();
-        prompts.push(json!({
-            "name": p["name"],
-            "description": p["description"],
-            "arguments": required,
-            "text": text.join("\n\n")
-        }));
-    }
     child.kill()?;
     child.wait()?;
-    Ok((init["serverInfo"].clone(), tools, prompts))
+    Ok((init["serverInfo"].clone(), tools))
 }
