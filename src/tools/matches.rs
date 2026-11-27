@@ -122,6 +122,11 @@ pub struct Summary {
     pub date: String,
     /// Match mode and game mode, e.g. "Ranked (Normal)".
     pub mode: String,
+    /// The game matched this lobby in its pool for new players.
+    pub new_player_pool: bool,
+    /// The game matched this lobby in its low priority pool, where players penalised for
+    /// leaving or for bad behaviour play.
+    pub low_priority_pool: bool,
     pub duration: String,
     pub winner: &'static str,
     pub teams: Vec<SummaryTeam>,
@@ -175,6 +180,8 @@ fn summary_from(
         match_id,
         date: date(i64::from(info.start_time())),
         mode: mode(info),
+        new_player_pool: info.new_player_pool(),
+        low_priority_pool: info.low_pri_pool(),
         duration: mmss(u64::from(info.duration_s())),
         winner: team_name(winner),
         teams,
@@ -183,6 +190,21 @@ fn summary_from(
 }
 
 // ---- match_player ----
+
+fn kill_participation(info: &MatchInfo, p: &Players) -> Option<f64> {
+    let team_kills: u32 = info
+        .players
+        .iter()
+        .filter(|q| q.team() == p.team())
+        .map(Players::kills)
+        .sum();
+    (team_kills > 0).then(|| {
+        round(
+            f64::from(p.kills() + p.assists()) / f64::from(team_kills),
+            3,
+        )
+    })
+}
 
 #[derive(Serialize, JsonSchema)]
 pub struct SoulSource {
@@ -245,6 +267,10 @@ pub struct PlayerReport {
     pub kills: u32,
     pub deaths: u32,
     pub assists: u32,
+    /// The share of the team's kills the player took part in, (kills + assists) / team kills;
+    /// `None` when the team got none. Read assists against it: few assists in a team with few
+    /// kills is not staying out of fights.
+    pub kill_participation: Option<f64>,
     pub net_worth: u32,
     /// At each stats snapshot, the times `performance_curve` averages; the last is the match end.
     pub net_worth_over_time: Vec<NetWorthAt>,
@@ -450,6 +476,7 @@ fn player_from(
         kills: p.kills(),
         deaths: p.deaths(),
         assists: p.assists(),
+        kill_participation: kill_participation(info, p),
         net_worth: p.net_worth(),
         net_worth_over_time: p
             .stats
@@ -643,7 +670,10 @@ mod tests {
     #[test]
     fn summary_splits_the_teams() {
         let names = HashMap::from([(ME, "a name".to_owned())]);
-        let s = summary_from(&cat(), MATCH, &fixture(), &names, Vec::new());
+        let mut info = fixture();
+        info.new_player_pool = Some(true);
+        let s = summary_from(&cat(), MATCH, &info, &names, Vec::new());
+        assert_eq!((s.new_player_pool, s.low_priority_pool), (true, false));
         assert_eq!(
             (
                 s.date.as_str(),
@@ -724,6 +754,8 @@ mod tests {
             ("H72", "The Hidden King", "York", PlayerResult::Win)
         );
         assert_eq!(r.teammates_who_left, ["H20 at 25:00"]);
+        // 16 kills and 22 assists of the team's 64 kills.
+        assert_eq!(r.kill_participation, Some(0.594));
         assert_eq!(
             (
                 r.last_hits,
@@ -865,6 +897,17 @@ mod tests {
                 ),
             ])
         );
+    }
+
+    #[test]
+    fn kill_participation_needs_team_kills() {
+        let mut info = fixture();
+        let team = player_mut(&mut info, ME).team;
+        for p in info.players.iter_mut().filter(|p| p.team == team) {
+            p.kills = Some(0);
+        }
+        let r = player_from(&cat(), MATCH, ME, &info, Vec::new()).unwrap();
+        assert_eq!(r.kill_participation, None);
     }
 
     #[test]
