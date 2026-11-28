@@ -1683,6 +1683,82 @@ pub struct Hero {
     ///Always emitted (empty if the hero declares no `m_vecHeroTags`).
     pub tags: ::std::vec::Vec<::std::string::String>,
 }
+///`HeroBuildStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct HeroBuildStats {
+    ///Average badge (tier = first digits, subtier = last digit) of the matches with this build that have one; 0 without any. See more: <https://api.deadlock-api.com/v1/assets/ranks>
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub avg_average_badge: ::std::option::Option<f64>,
+    ///The bucket value (depends on the bucket query parameter, 0 without one).
+    pub bucket: i64,
+    ///The ID of the hero build. The `hero_build_id` is the first build the player had selected when the game started.
+    pub hero_build_id: i64,
+    ///The ID of the hero. See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_id: i32,
+    ///The number of losses with this build.
+    pub losses: i64,
+    ///The total number of matches played with this build (`wins + losses`).
+    pub matches: i64,
+    ///The number of unique players who used this build.
+    pub players: i64,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_assists: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_boss_damage: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_creep_damage: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_creep_kills: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_damage_mitigated: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_deaths: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_denies: ::std::option::Option<i64>,
+    ///Sum of the match durations (seconds), for per-minute rates.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_duration_s: ::std::option::Option<i64>,
+    ///Bullets that hit an enemy hero.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_hero_bullets_hit: ::std::option::Option<i64>,
+    ///Hero hits that were crits (headshots).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_hero_bullets_hit_crit: ::std::option::Option<i64>,
+    /**Sum of the kills of every match with this build. Average per match: `total_kills / matches`. This and the
+    other totals are only present with `include_performance=true`.*/
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_kills: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_last_hits: ::std::option::Option<i64>,
+    ///Sum of the final hero levels.
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_level: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_max_health: ::std::option::Option<i64>,
+    ///Sum of the final net worth (souls).
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_net_worth: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_neutral_damage: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_neutral_kills: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_player_damage: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_player_damage_taken: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_player_healing: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_self_healing: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_shots_hit: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_shots_missed: ::std::option::Option<i64>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub total_teammate_healing: ::std::option::Option<i64>,
+    ///The number of wins with this build.
+    pub wins: i64,
+}
 ///`HeroColors`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct HeroColors {

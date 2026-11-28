@@ -3,22 +3,24 @@
 //! `lane_matchups`; plus `builds` and `leaderboard`.
 
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::contracts::api::{
-    AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats,
-    ItemFlowStats, ItemSlotType, ItemStats, LaneMatchupStats, LaneSoulCurve, LaneSoulCurveStatsKey,
-    MetricValues, PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric, Region,
+    AnalyticsAbilityOrderStats, AnalyticsHeroStats, Build, HeroBuildStats, HeroCounterStats,
+    HeroSynergyStats, ItemFlowStats, ItemSlotType, ItemStats, LaneMatchupStats, LaneSoulCurve,
+    LaneSoulCurveStatsKey, MetricValues, PlayerPerformanceCurvePoint,
+    PlayerStatsMetricsKey as Metric, Region,
 };
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{clip, date, mmss, plain};
 use crate::domain::items::ItemKind;
 use crate::domain::terms::gold_source_name;
-use crate::http::{Source, id_list};
+use crate::http::{Source, id_list, optional_part};
 use crate::problem::{Problem, Result};
 use crate::sources::api;
 use crate::tools::player::steam_names;
@@ -72,15 +74,38 @@ pub struct HeroStats {
     pub sources: Vec<Source>,
 }
 
+/// `&min_hero_matches_total=..&max_hero_matches_total=..`: the players' matches on their hero
+/// over their whole history.
+fn hero_matches_query(min: Option<u32>, max: Option<u32>) -> Result<String> {
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(Problem::invalid_argument(format!(
+            "min_hero_matches {min} is above max_hero_matches {max}"
+        )));
+    }
+    let mut q = String::new();
+    if let Some(min) = min {
+        let _ = write!(q, "&min_hero_matches_total={min}");
+    }
+    if let Some(max) = max {
+        let _ = write!(q, "&max_hero_matches_total={max}");
+    }
+    Ok(q)
+}
+
 pub fn hero_stats(
     filters: &MetaFilters,
+    min_hero_matches: Option<u32>,
+    max_hero_matches: Option<u32>,
     min_matches: u32,
     sort: HeroSort,
     limit: u32,
 ) -> Result<HeroStats> {
+    let experience = hero_matches_query(min_hero_matches, max_hero_matches)?;
     let cat = catalog()?;
     let filters = filters.to_filters(&cat)?;
-    let (rows, source) = api::hero_stats(&filters.query())?;
+    let (rows, source) = api::hero_stats(&format!("{}{experience}", filters.query()))?;
     let sources = answer_sources([source], &cat);
     Ok(hero_stats_from(
         &cat,
@@ -678,6 +703,15 @@ fn ability_order_from(
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct BuildCategory {
+    /// The author's name for the group; the game's default groups come as keys such as
+    /// `#Citadel_HeroBuilds_EarlyGame`.
+    pub name: String,
+    /// The group's items, in the build's order.
+    pub items: Vec<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct BuildRow {
     pub name: String,
     /// Search this id in the game's build browser to import the build.
@@ -691,6 +725,16 @@ pub struct BuildRow {
     pub last_updated: Option<String>,
     /// The author's description, cut at 300 characters.
     pub description: Option<String>,
+    /// Matches of the last 30 days in which a player of the hero had this build selected when the
+    /// game started, from the API's demo analysis, which covers only part of the matches. Players
+    /// may have bought other items than the build lists. `None` when the build was selected in
+    /// fewer than 20 of them.
+    pub matches: Option<i64>,
+    /// Wins over `matches`, 0..1; `None` without `matches`.
+    pub win_rate: Option<f64>,
+    /// The build's items in the author's groups, in order: compare a player's purchases with them.
+    /// Only when one build is asked for by `build_id`; empty in a list, to keep it short.
+    pub items: Vec<BuildCategory>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -711,6 +755,7 @@ fn build_description(d: &str) -> Option<String> {
 
 pub fn builds(
     hero: &str,
+    build_id: Option<u32>,
     search: Option<&str>,
     language: Option<crate::contracts::api::BuildLanguage>,
     limit: u32,
@@ -719,6 +764,9 @@ pub fn builds(
     let hero_id = cat.find_hero(hero)?;
     let mut query =
         format!("&hero_id={hero_id}&sort_by=weekly_favorites&sort_direction=desc&limit={limit}");
+    if let Some(id) = build_id {
+        let _ = write!(query, "&build_id={id}");
+    }
     if let Some(s) = search {
         let _ = write!(query, "&search_name={}", crate::http::encode(s));
     }
@@ -726,16 +774,41 @@ pub fn builds(
         let _ = write!(query, "&build_language={language}");
     }
     let (rows, source) = api::builds(&query)?;
+    let (stats, stats_source) = optional_part("build win rates", api::hero_build_stats(hero_id));
     let ids: Vec<u32> = rows
         .iter()
         .map(|b| id32(b.hero_build.author_account_id))
         .collect();
     let (names, names_source) = steam_names(&ids);
+    let sources = answer_sources([source, stats_source].into_iter().chain(names_source), &cat);
+    Ok(builds_from(
+        &cat,
+        cat.hero(hero_id),
+        build_id.is_some(),
+        &rows,
+        &stats,
+        &names,
+        sources,
+    ))
+}
+
+fn builds_from(
+    cat: &Catalog,
+    hero: String,
+    with_items: bool,
+    rows: &[Build],
+    stats: &[HeroBuildStats],
+    names: &HashMap<u32, String>,
+    sources: Vec<Source>,
+) -> HeroBuilds {
+    // Asked without `bucket`, the API gives one row per build (`bucket` 0).
+    let played: HashMap<i64, &HeroBuildStats> =
+        stats.iter().map(|s| (s.hero_build_id, s)).collect();
     let builds = rows
         .iter()
-        .take(take(limit))
         .map(|b| {
             let h = &b.hero_build;
+            let played = played.get(&h.hero_build_id);
             BuildRow {
                 name: plain(&h.name),
                 hero_build_id: h.hero_build_id,
@@ -746,14 +819,36 @@ pub fn builds(
                 favorites: b.num_favorites,
                 last_updated: h.last_updated_timestamp.map(date),
                 description: h.description.as_deref().and_then(build_description),
+                matches: played.map(|s| s.matches),
+                win_rate: played.and_then(|s| win_rate(s.wins, s.matches)),
+                items: h
+                    .details
+                    .mod_categories
+                    .iter()
+                    .filter(|_| with_items)
+                    .map(|c| BuildCategory {
+                        name: plain(&c.name),
+                        items: c
+                            .mods
+                            .iter()
+                            .flatten()
+                            .map(|m| {
+                                cat.item(id32(m.ability_id)).map_or_else(
+                                    || format!("item {}", m.ability_id),
+                                    |i| i.name.clone(),
+                                )
+                            })
+                            .collect(),
+                    })
+                    .collect(),
             }
         })
         .collect();
-    Ok(HeroBuilds {
-        hero: cat.hero(hero_id),
+    HeroBuilds {
+        hero,
         builds,
-        sources: answer_sources(std::iter::once(source).chain(names_source), &cat),
-    })
+        sources,
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -1572,6 +1667,65 @@ mod tests {
         assert!(one.contains("enemy_heroes: name both"), "{one}");
         assert!(query(&[11, 76], &[84, 84]).is_err());
         assert!(query(&[11, 11], &[]).unwrap_err().contains("heroes:"));
+    }
+
+    #[test]
+    fn builds_carry_items_and_win_rates() {
+        let mut rows: Vec<Build> = fixture(include_str!("../../contracts/fixtures/builds.json"));
+        let stats: Vec<HeroBuildStats> = fixture(include_str!(
+            "../../contracts/fixtures/hero_build_stats.json"
+        ));
+        // A second build that no one selected in 20 matches.
+        let mut unplayed = rows[0].clone();
+        unplayed.hero_build.hero_build_id = 1;
+        unplayed.hero_build.details.mod_categories.clear();
+        rows.push(unplayed);
+        let up = |id, name| Item::test(id, name, ItemKind::Upgrade);
+        let cat = Catalog::test(&[(12, "Kelvin")]).with_items(vec![
+            up(3_776_945_997, "Extra Charge"),
+            up(754_480_263, "Mystic Burst"),
+        ]);
+        let names = HashMap::from([(1_310_475_170, "an author".to_owned())]);
+        let b = builds_from(&cat, cat.hero(12), true, &rows, &stats, &names, Vec::new());
+        let v = serde_json::to_value(&b).unwrap();
+        assert_eq!(v["hero"], "Kelvin");
+        assert_eq!(
+            (&v["builds"][0]["matches"], &v["builds"][0]["win_rate"]),
+            (&serde_json::json!(262), &serde_json::json!(0.595))
+        );
+        assert_eq!(v["builds"][0]["author"], "an author");
+        assert_eq!(
+            v["builds"][0]["items"],
+            serde_json::json!([{"name": "Line", "items": [
+                "item 3074274290", "Extra Charge", "item 1150006784", "item 1102081447",
+                "item 7409189", "item 2566692615", "item 2447176615", "Mystic Burst",
+            ]}])
+        );
+        assert_eq!(
+            (&v["builds"][1]["matches"], &v["builds"][1]["win_rate"]),
+            (&serde_json::Value::Null, &serde_json::Value::Null)
+        );
+        // A list leaves the items out; the API applies the limit.
+        let b = builds_from(&cat, cat.hero(12), false, &rows, &stats, &names, Vec::new());
+        assert!(b.builds.iter().all(|b| b.items.is_empty()));
+    }
+
+    #[test]
+    fn hero_matches_filter_the_players() {
+        assert_eq!(hero_matches_query(None, None).unwrap(), "");
+        assert_eq!(
+            hero_matches_query(None, Some(5)).unwrap(),
+            "&max_hero_matches_total=5"
+        );
+        assert_eq!(
+            hero_matches_query(Some(5), Some(5)).unwrap(),
+            "&min_hero_matches_total=5&max_hero_matches_total=5"
+        );
+        assert_eq!(
+            hero_matches_query(Some(101), None).unwrap(),
+            "&min_hero_matches_total=101"
+        );
+        assert!(hero_matches_query(Some(6), Some(5)).is_err());
     }
 
     #[test]

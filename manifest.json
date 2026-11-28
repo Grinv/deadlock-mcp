@@ -69,7 +69,7 @@
       "name": "ability_order"
     },
     {
-      "description": "Popular in-game builds of a hero: name, author, the build id to import in game, favorites.",
+      "description": "Popular in-game builds of a hero, or one build by its id: name, author, the build id to\nimport in game, favorites, items, and matches and win rate with the build selected.",
       "name": "builds"
     },
     {
@@ -121,11 +121,11 @@
       "name": "match_lanes"
     },
     {
-      "description": "One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths\nwith killers, positions and the nearest objective, purchases, ability upgrades and permanent buffs.",
+      "description": "One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths\nwith killers, positions and the nearest objective, the build selected, purchases, ability upgrades and\npermanent buffs.",
       "name": "match_player"
     },
     {
-      "description": "A match's mode, length, winner and objectives destroyed, and every player's hero, lane, K/D/A, souls,\ndamage and own result.",
+      "description": "A match's mode, length, winner, objectives destroyed and Midboss kills, and every player's hero, lane,\nK/D/A, souls, damage and own result.",
       "name": "match_summary"
     },
     {

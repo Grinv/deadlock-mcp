@@ -1,6 +1,7 @@
 //! Deadlock API endpoints (<https://api.deadlock-api.com/docs>), typed by `contracts`, and how
 //! long each answer stays fresh.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::contracts::{api, valve};
@@ -66,9 +67,20 @@ pub fn map(version: u32) -> Result<(api::MapData, Source)> {
     )
 }
 
-/// A finished match never changes. The API declares this response as a bare object; it is
-/// Valve's `CMsgMatchMetaDataContents` plus a few extra fields, which are ignored here.
-pub fn match_metadata(match_id: u64) -> Result<(valve::CMsgMatchMetaDataContents, Source)> {
+/// A match's metadata as the API serves it: Valve's `CMsgMatchMetaDataContents` (`match_info`)
+/// plus fields from the API's demo analysis. The API declares the response as a bare object, so
+/// these are typed here; `pregame_hero_ids` and `banned_hero_ids` are ignored.
+#[derive(serde::Deserialize)]
+pub struct MatchMetadata {
+    pub match_info: Option<valve::c_msg_match_meta_data_contents::MatchInfo>,
+    /// Account id to the build the player had selected when the game started; empty without demo
+    /// analysis.
+    #[serde(default)]
+    pub hero_build_ids: HashMap<u32, i64>,
+}
+
+/// A finished match never changes.
+pub fn match_metadata(match_id: u64) -> Result<(MatchMetadata, Source)> {
     get_json(
         &format!("{API}/v1/matches/{match_id}/metadata"),
         Fresh::Forever,
@@ -155,6 +167,16 @@ pub fn ingest_status(account_id: u32) -> Result<(api::IngestStatusResponse, Sour
 pub fn builds(filters: &str) -> Result<(Vec<api::Build>, Source)> {
     get_json(
         &format!("{API}/v1/builds?only_latest=true{filters}"),
+        ANALYTICS,
+    )
+}
+
+/// Matches and wins of a hero's builds as the players had selected them when the game started,
+/// from demo analysis, over the API's default window (30 days, builds with 20 matches or more).
+/// Only builds in the API's build database; without `bucket`, one row per build.
+pub fn hero_build_stats(hero_id: u32) -> Result<(Vec<api::HeroBuildStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/hero-build-stats?hero_ids={hero_id}"),
         ANALYTICS,
     )
 }

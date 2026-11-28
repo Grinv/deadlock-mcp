@@ -29,6 +29,11 @@ const TEAMS: [ECitadelLobbyTeam; 2] = [
 const LANE_SAMPLES_S: [u32; 5] = [180, 360, 540, 720, 900];
 
 pub(crate) fn load(match_id: u64) -> Result<(MatchInfo, Source)> {
+    load_with_builds(match_id).map(|(info, _, source)| (info, source))
+}
+
+/// `load`, plus each player's build as `hero_build_ids` gives it.
+fn load_with_builds(match_id: u64) -> Result<(MatchInfo, HashMap<u32, i64>, Source)> {
     let (meta, source) = api::match_metadata(match_id).map_err(|p| {
         if p.kind == Kind::NotFound {
             Problem::not_found(format!(
@@ -47,7 +52,7 @@ pub(crate) fn load(match_id: u64) -> Result<(MatchInfo, Source)> {
         )
         .with_instance(source.url.clone())
     })?;
-    Ok((info, source))
+    Ok((info, meta.hero_build_ids, source))
 }
 
 fn last_stat(p: &Players) -> Option<&PlayerStats> {
@@ -124,6 +129,15 @@ pub struct DestroyedObjective {
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct MidbossKill {
+    /// The team that killed the Midboss.
+    pub killed_by: &'static str,
+    /// The team that claimed the Rejuvenator it dropped; not `killed_by` when the other team stole it.
+    pub claimed_by: &'static str,
+    pub at: String,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct Summary {
     pub match_id: u64,
     pub date: String,
@@ -138,6 +152,11 @@ pub struct Summary {
     pub winner: &'static str,
     /// The objectives destroyed, in order.
     pub objectives: Vec<DestroyedObjective>,
+    /// The Midboss kills, in order. The team that claims one gets the Rejuvenator for 240 s: each
+    /// of its players who takes a fatal hit revives at that spot about 3 s later, once. A kill on
+    /// a player with it is no kill, so that team can lose a fight without deaths
+    /// (deadlock.wiki/Rejuvenator).
+    pub midboss: Vec<MidbossKill>,
     pub teams: Vec<SummaryTeam>,
     pub sources: Vec<Source>,
 }
@@ -196,6 +215,18 @@ fn summary_from(
             })
         })
         .collect();
+    let mut kills: Vec<_> = info.mid_boss.iter().collect();
+    kills.sort_by_key(|m| m.destroyed_time_s());
+    let midboss = kills
+        .into_iter()
+        .filter_map(|m| {
+            Some(MidbossKill {
+                killed_by: team_name(m.team_killed()),
+                claimed_by: team_name(m.team_claimed()),
+                at: happened_at(m.destroyed_time_s())?,
+            })
+        })
+        .collect();
     Summary {
         match_id,
         date: date(i64::from(info.start_time())),
@@ -205,6 +236,7 @@ fn summary_from(
         duration: mmss(u64::from(info.duration_s())),
         winner: team_name(winner),
         objectives,
+        midboss,
         teams,
         sources,
     }
@@ -319,6 +351,10 @@ pub struct PlayerReport {
     /// zero.
     pub awards: Vec<Award>,
     pub deaths_detail: Vec<Death>,
+    /// The build the player had selected when the match started, from the API's demo analysis
+    /// (a build changed during the match doesn't show); `None` when the analysis doesn't give one.
+    /// `builds` with this `build_id` lists its items and win rate, to compare with `purchases`.
+    pub hero_build_id: Option<i64>,
     pub purchases: Vec<Purchase>,
     /// Ability points as spent on the hero's four abilities, in time order. Compare the order with
     /// `ability_order`'s most common and best-winning ones.
@@ -456,9 +492,9 @@ fn ability_upgrades(cat: &Catalog, p: &Players) -> Vec<AbilityUpgrade> {
 
 pub fn player(match_id: u64, account_id: u32) -> Result<PlayerReport> {
     let cat = catalog()?;
-    let (info, source) = load(match_id)?;
+    let (info, build_ids, source) = load_with_builds(match_id)?;
     let sources = answer_sources([source], &cat);
-    player_from(&cat, match_id, account_id, &info, sources)
+    player_from(&cat, match_id, account_id, &info, &build_ids, sources)
 }
 
 fn player_from(
@@ -466,6 +502,7 @@ fn player_from(
     match_id: u64,
     account_id: u32,
     info: &MatchInfo,
+    build_ids: &HashMap<u32, i64>,
     sources: Vec<Source>,
 ) -> Result<PlayerReport> {
     let p = find_player(info, match_id, account_id)?;
@@ -546,6 +583,7 @@ fn player_from(
         permanent_buffs,
         awards: awards(cat, p),
         deaths_detail,
+        hero_build_id: build_ids.get(&account_id).copied(),
         purchases,
         ability_upgrades: ability_upgrades(cat, p),
         sources,
@@ -636,16 +674,16 @@ mod tests {
 
     use super::*;
     use crate::contracts::api;
-    use crate::contracts::valve::CMsgMatchMetaDataContents;
-    use crate::contracts::valve::c_msg_match_meta_data_contents::Items;
+    use crate::contracts::valve::c_msg_match_meta_data_contents::{Items, MidBoss};
     use crate::domain::items::Item;
 
     /// Match 143768397 from `contracts/fixtures/match_metadata.json`.
+    fn metadata() -> crate::sources::api::MatchMetadata {
+        serde_json::from_str(include_str!("../../contracts/fixtures/match_metadata.json")).unwrap()
+    }
+
     fn fixture() -> MatchInfo {
-        let meta: CMsgMatchMetaDataContents =
-            serde_json::from_str(include_str!("../../contracts/fixtures/match_metadata.json"))
-                .unwrap();
-        meta.match_info.unwrap()
+        metadata().match_info.unwrap()
     }
 
     /// The match's heroes as `H<id>`, its three lanes, the map, two items and three awards.
@@ -798,8 +836,14 @@ mod tests {
         let me = player_mut(&mut info, ME);
         me.accolades[0].accolade_threshold_achieved = Some(-1);
         me.items[2].sold_time_s = Some(600);
-        let r = player_from(&cat(), MATCH, ME, &info, Vec::new()).unwrap();
+        let builds = metadata().hero_build_ids;
+        let r = player_from(&cat(), MATCH, ME, &info, &builds, Vec::new()).unwrap();
         let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(r.hero_build_id, Some(613_001));
+        let other = player_from(&cat(), MATCH, 85_463_520, &info, &builds, Vec::new()).unwrap();
+        assert_eq!(other.hero_build_id, Some(849_792));
+        let r2 = player_from(&cat(), MATCH, ME, &info, &HashMap::new(), Vec::new()).unwrap();
+        assert_eq!(r2.hero_build_id, None);
         assert_eq!(
             (r.hero.as_str(), r.team, r.lane.name.as_str(), r.result),
             ("H72", "The Hidden King", "York", PlayerResult::Win)
@@ -887,7 +931,7 @@ mod tests {
 
     #[test]
     fn deaths_name_killers_and_places() {
-        let r = player_from(&cat(), MATCH, ME, &fixture(), Vec::new()).unwrap();
+        let r = player_from(&cat(), MATCH, ME, &fixture(), &HashMap::new(), Vec::new()).unwrap();
         let v = serde_json::to_value(&r.deaths_detail).unwrap();
         let york = "The Archmother's York Guardian";
         let death = |at, killer, ttk, pos: [i64; 2], near: Option<&str>, kpos: [i64; 2]| {
@@ -951,6 +995,25 @@ mod tests {
     }
 
     #[test]
+    fn summary_lists_midboss_kills() {
+        let mut info = fixture();
+        // An earlier kill by the Archmother that the Hidden King stole: added last, listed first.
+        info.mid_boss.push(MidBoss {
+            team_killed: Some(1),
+            team_claimed: Some(0),
+            destroyed_time_s: Some(1500),
+        });
+        let s = summary_from(&cat(), MATCH, &info, &HashMap::new(), Vec::new());
+        assert_eq!(
+            serde_json::to_value(&s.midboss).unwrap(),
+            json!([
+                {"killed_by": "The Archmother", "claimed_by": "The Hidden King", "at": "25:00"},
+                {"killed_by": "The Hidden King", "claimed_by": "The Hidden King", "at": "32:31"},
+            ])
+        );
+    }
+
+    #[test]
     fn summary_lists_destroyed_objectives() {
         let s = summary_from(&cat(), MATCH, &fixture(), &HashMap::new(), Vec::new());
         let got: Vec<_> = s
@@ -1007,7 +1070,7 @@ mod tests {
             upgrade_info: Some(65_536),
             ..Items::default()
         });
-        let r = player_from(&cat, MATCH, ME, &info, Vec::new()).unwrap();
+        let r = player_from(&cat, MATCH, ME, &info, &HashMap::new(), Vec::new()).unwrap();
         assert_eq!(
             serde_json::to_value(&r.ability_upgrades).unwrap(),
             json!([
@@ -1026,13 +1089,13 @@ mod tests {
         for p in info.players.iter_mut().filter(|p| p.team == team) {
             p.kills = Some(0);
         }
-        let r = player_from(&cat(), MATCH, ME, &info, Vec::new()).unwrap();
+        let r = player_from(&cat(), MATCH, ME, &info, &HashMap::new(), Vec::new()).unwrap();
         assert_eq!(r.kill_participation, None);
     }
 
     #[test]
     fn player_must_be_in_the_match() {
-        let err = player_from(&cat(), MATCH, 7, &fixture(), Vec::new())
+        let err = player_from(&cat(), MATCH, 7, &fixture(), &HashMap::new(), Vec::new())
             .err()
             .unwrap();
         assert_eq!(

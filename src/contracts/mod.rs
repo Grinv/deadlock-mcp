@@ -63,7 +63,12 @@ mod tests {
         ));
         let _: api::IngestStatusResponse =
             parse(include_str!("../../contracts/fixtures/ingest_status.json"));
-        let _: Vec<api::Build> = parse(include_str!("../../contracts/fixtures/builds.json"));
+        let builds: Vec<api::Build> = parse(include_str!("../../contracts/fixtures/builds.json"));
+        assert!(!builds[0].hero_build.details.mod_categories.is_empty());
+        let stats: Vec<api::HeroBuildStats> = parse(include_str!(
+            "../../contracts/fixtures/hero_build_stats.json"
+        ));
+        assert!(stats.iter().any(|s| s.hero_build_id == 568_186));
         let _: Vec<api::AnalyticsHeroStats> = parse(include_str!(
             "../../contracts/fixtures/analytics_hero_stats.json"
         ));
@@ -123,6 +128,7 @@ mod tests {
         let info = meta.match_info.expect("match_info");
         assert_eq!(info.match_id(), 143_768_397);
         assert_eq!(info.players.len(), 12);
+        assert_eq!(info.mid_boss.len(), 1);
         assert_eq!(
             info.match_mode(),
             valve::ECitadelMatchMode::KECitadelMatchModeRanked

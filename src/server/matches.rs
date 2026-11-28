@@ -64,8 +64,8 @@ pub struct MatchDistanceArgs {
 
 #[tool_router(router = match_tools, vis = "pub(super)")]
 impl DeadlockServer {
-    /// A match's mode, length, winner and objectives destroyed, and every player's hero, lane, K/D/A, souls,
-    /// damage and own result.
+    /// A match's mode, length, winner, objectives destroyed and Midboss kills, and every player's hero, lane,
+    /// K/D/A, souls, damage and own result.
     #[tool(
         title = "Match summary",
         input_schema = input_schema::<MatchArgs>(),
@@ -80,7 +80,8 @@ impl DeadlockServer {
     }
 
     /// One player's match in depth: result and why, net worth over time, souls by source, unspent souls, deaths
-    /// with killers, positions and the nearest objective, purchases, ability upgrades and permanent buffs.
+    /// with killers, positions and the nearest objective, the build selected, purchases, ability upgrades and
+    /// permanent buffs.
     #[tool(
         title = "Player in a match",
         input_schema = input_schema::<MatchPlayerArgs>(),

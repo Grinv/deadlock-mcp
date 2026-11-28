@@ -47,10 +47,11 @@ URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/L
 
 const REVIEW_STEPS: &str = "\
 1. Find the player with player_search if needed and take the match id from player_overview. Note how experienced \
-they are (player_heroes: their matches on this hero) and whether the match is ranked (match_summary's mode).
-2. Read the whole match first: match_summary (both teams' K/D/A, net worth and MVP, and whether the game matched it \
-in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), then match_player for \
-the player.
+they are (player_heroes: their matches on this hero; if few, hero_stats with max_hero_matches 5 shows how the hero \
+does for players new to it) and whether the match is ranked (match_summary's mode).
+2. Read the whole match first: match_summary (both teams' K/D/A, net worth and MVP, whether the game matched it in \
+the new player or low priority pool, and the Midboss: for 240 s after claiming its Rejuvenator, a team can lose a \
+fight without deaths), match_lanes (each lane's soul lead at every snapshot), then match_player for the player.
 3. In the player's lane, call match_player for both lane opponents and the lane partner and compare souls by source \
 (lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability upgrades \
 against ability_order. Compare the lane's soul lead from match_lanes (from the player's side) with lane_matchups for \
@@ -66,12 +67,13 @@ minute, damage dealt and taken per minute, last hits, assists).
 to the lane partner. Read each pairing against average_win_rate and give its place with the direction (\"8th hardest \
 of 43\"), not a bare number.
 6. Deaths: who killed them, where and when (match_player); player_deaths_map with their hero if dying looks like a \
-habit. Items: what they bought when, against item_timings for the hero at their rank (its adjusted win rates), \
-next to what the enemies built and hero_items against this match's enemy heroes (enemy_heroes).
+habit. Items: what they bought when, against item_timings for the hero at their rank (its adjusted win rates) and \
+the build they selected (builds with build_id set to the build match_player gives, when known), next to what the \
+enemies built and hero_items against this match's enemy heroes (enemy_heroes).
 7. Before stating a conclusion, check it against a second figure that could contradict it: read assists against \
 kill_participation, and take much damage taken as a sign they were in the fights. Keep data and inference apart and \
-give the match counts behind rates. Don't call a choice a mistake until you know where it came from: ask whether \
-they followed a build from builds.
+give the match counts behind rates. Don't call a choice a mistake until you know where it came from: their build, \
+or ask.
 8. End with two or three concrete things to do differently, each tied to a figure. Check mechanics on the wiki before \
 relying on them.";
 

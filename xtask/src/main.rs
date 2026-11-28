@@ -27,6 +27,7 @@ const API_SCHEMAS: &[&str] = &[
     "FeedItem",
     "GenericData",
     "Hero",
+    "HeroBuildStats",
     "HeroCounterStats",
     "HeroStats",
     "HeroSynergyStats",

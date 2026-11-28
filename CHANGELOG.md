@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `builds` lists each build's items in the author's groups, and the matches and win rate of the
+  last 30 days with the build selected when the game started (the API's demo analysis); it takes
+  `build_id` for one build. `match_player` gives the player's selected build (`hero_build_id`).
+- `hero_stats` takes `min_hero_matches` and `max_hero_matches`: only players with that many
+  matches on their hero over their whole history, e.g. up to 5 for players new to a hero.
+- `match_summary` lists the Midboss kills, in order: which team killed it, which claimed the
+  Rejuvenator, and when.
 - `item_timings`: which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30 and
   30+ minutes), by the API's win rate adjusted for the buyer's net worth at purchase, next to the
   raw one, each phase's win rate and how many matches reached it. `hero_items` says its win rates

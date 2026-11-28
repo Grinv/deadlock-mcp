@@ -26,6 +26,10 @@ pub struct BuildsArgs {
     /// The hero: a name (or a unique part of it) or a hero id.
     #[garde(length(chars, min = 1, max = 50))]
     pub hero: String,
+    /// Only the build with this id, e.g. a player's `hero_build_id` from `match_player`; the answer
+    /// then lists the build's items.
+    #[garde(inner(range(min = 1)))]
+    pub build_id: Option<u32>,
     /// Only builds whose name contains this text.
     #[garde(inner(length(chars, min = 1, max = 100)))]
     pub search: Option<String>,
@@ -56,6 +60,17 @@ pub struct HeroStatsArgs {
     #[serde(default = "default_hundred")]
     #[garde(range(min = 1))]
     pub min_matches: u32,
+    /// Only players with at least this many matches on the hero they played, over their whole
+    /// history in normal mode (the API refreshes the counts every 30 minutes). With either of
+    /// these, only those players count: `matches` is their matches over 12, and `pick_rate` the
+    /// hero's share of their picks times 12.
+    #[garde(inner(range(min = 1)))]
+    pub min_hero_matches: Option<u32>,
+    /// Only players with at most this many matches on the hero they played, counted like
+    /// `min_hero_matches`: 5 shows how heroes do for players new to them. At least
+    /// `min_hero_matches`.
+    #[garde(inner(range(min = 1)))]
+    pub max_hero_matches: Option<u32>,
     /// `win_rate` (default) or `pick_rate`.
     #[serde(default)]
     #[garde(skip)]
@@ -298,7 +313,8 @@ fn filters(min_rank: Option<String>, max_rank: Option<String>, days: u32) -> Met
 
 #[tool_router(router = meta_tools, vis = "pub(super)")]
 impl DeadlockServer {
-    /// Popular in-game builds of a hero: name, author, the build id to import in game, favorites.
+    /// Popular in-game builds of a hero, or one build by its id: name, author, the build id to
+    /// import in game, favorites, items, and matches and win rate with the build selected.
     #[tool(
         title = "Hero builds",
         input_schema = input_schema::<BuildsArgs>(),
@@ -309,7 +325,16 @@ impl DeadlockServer {
         Parameters(raw): Parameters<rmcp::model::JsonObject>,
     ) -> Result<Json<meta::HeroBuilds>, CallToolResult> {
         let a: BuildsArgs = parse(raw)?;
-        run(move || meta::builds(&a.hero, a.search.as_deref(), a.language, a.limit)).await
+        run(move || {
+            meta::builds(
+                &a.hero,
+                a.build_id,
+                a.search.as_deref(),
+                a.language,
+                a.limit,
+            )
+        })
+        .await
     }
 
     /// Win rate, pick rate and matches per hero over all players' matches.
@@ -324,7 +349,17 @@ impl DeadlockServer {
     ) -> Result<Json<meta::HeroStats>, CallToolResult> {
         let a: HeroStatsArgs = parse(raw)?;
         let f = filters(a.min_rank, a.max_rank, a.days);
-        run(move || meta::hero_stats(&f, a.min_matches, a.sort, a.limit)).await
+        run(move || {
+            meta::hero_stats(
+                &f,
+                a.min_hero_matches,
+                a.max_hero_matches,
+                a.min_matches,
+                a.sort,
+                a.limit,
+            )
+        })
+        .await
     }
 
     /// Which shop items win on a hero, optionally against given enemy heroes. The win rates are
