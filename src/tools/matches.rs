@@ -352,8 +352,10 @@ pub struct PlayerReport {
     pub awards: Vec<Award>,
     pub deaths_detail: Vec<Death>,
     /// The build the player had selected when the match started, from the API's demo analysis
-    /// (a build changed during the match doesn't show); `None` when the analysis doesn't give one.
-    /// `builds` with this `build_id` lists its items and win rate, to compare with `purchases`.
+    /// (a build changed during the match doesn't show). `None` most often means the API hasn't
+    /// analysed this match's demo, not that the player had no build: then ask them which one they
+    /// followed. `builds` with this `build_id` lists its items and win rate, to compare with
+    /// `purchases`.
     pub hero_build_id: Option<i64>,
     pub purchases: Vec<Purchase>,
     /// Ability points as spent on the hero's four abilities, in time order. Compare the order with
