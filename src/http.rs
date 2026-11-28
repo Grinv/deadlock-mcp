@@ -164,9 +164,22 @@ enum Attempt {
     },
 }
 
-/// The deadlock-api answers errors as `{"status": .., "error": ".."}` JSON or as plain text.
+/// The deadlock-api answers errors as `{"status": .., "error": ".."}` JSON or as plain text; a
+/// gateway in front of it (Cloudflare) answers with an HTML page, whose title says what happened.
 fn upstream_detail(body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
+    if text.trim_start().starts_with('<') {
+        // ASCII only, so byte offsets stay those of `text`.
+        let lower = text.to_ascii_lowercase();
+        let title = lower
+            .find("<title>")
+            .map(|i| i + "<title>".len())
+            .and_then(|start| Some(text[start..start + lower[start..].find("</title>")?].trim()));
+        return title.map_or_else(
+            || "an HTML page instead of the API's answer".to_owned(),
+            str::to_owned,
+        );
+    }
     let detail = serde_json::from_str::<serde_json::Value>(&text)
         .ok()
         .and_then(|v| {
@@ -596,6 +609,17 @@ mod tests {
         assert_eq!(
             upstream_detail(b"Invalid steam id: abc\n"),
             "Invalid steam id: abc"
+        );
+        // A gateway's HTML page by its title, not its markup; non-ASCII before it is fine.
+        assert_eq!(
+            upstream_detail(
+                "<!DOCTYPE html><html><head><!-- é --><TITLE>deadlock-api.com | 504: Gateway time-out</TITLE>".as_bytes()
+            ),
+            "deadlock-api.com | 504: Gateway time-out"
+        );
+        assert_eq!(
+            upstream_detail(b"<html><body>oops</body></html>"),
+            "an HTML page instead of the API's answer"
         );
     }
 }
