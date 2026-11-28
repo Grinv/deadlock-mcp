@@ -6,6 +6,7 @@ inputs and the generated code are committed; the server build needs neither gene
 | File | Origin | Pinned at |
 |---|---|---|
 | `openapi.json` | <https://api.deadlock-api.com/openapi.json> (OpenAPI 3.1) | fetched 2026-11-26 |
+| `openapi.LICENSE` | `LICENSE` of [deadlock-api/deadlock-api](https://github.com/deadlock-api/deadlock-api): the MIT license the OpenAPI document declares | |
 | `protos/` | `crates/valveprotos/protos` of [deadlock-api/deadlock-api](https://github.com/deadlock-api/deadlock-api) | commit `ce14545498608cd30c3a12e6c41eea22f3882cd9` |
 | `protos/LICENSE` | `crates/valveprotos/license-protos.txt` of the same commit | |
 

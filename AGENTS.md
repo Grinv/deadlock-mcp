@@ -71,8 +71,10 @@ Data flows down this list: a module uses only the ones above it.
 
 ## Rules
 
-- Each tool answers one question. Don't merge several endpoints into one answer; describe how the
-  model should combine tools in `INSTRUCTIONS` and `REVIEW_STEPS` (`src/server/mod.rs`).
+- Each tool answers one question. When the API spreads that answer over several endpoints, as a
+  match and its Steam names or a lane curve and its win rate, the tool calls them; separate
+  questions are combined through `INSTRUCTIONS` and `REVIEW_STEPS` (`src/server/mod.rs`), not
+  inside a tool.
 - Every fact has one source. Wire types come from the contracts, names from the game data (lanes
   from `generic-data`, since Valve's lane enum still names the four-lane map), and a tool's schema
   from its argument type. Generate or read a list that exists upstream instead of copying it.
