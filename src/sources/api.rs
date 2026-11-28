@@ -212,6 +212,25 @@ pub fn performance_curve(filters: &str) -> Result<(Vec<api::PlayerPerformanceCur
     )
 }
 
+/// How a lane duo's soul and hero damage lead over the duo it laned against develops, at each
+/// stats snapshot. `filters` picks the duos and `group_by`.
+pub fn lane_soul_curve(filters: &str) -> Result<(Vec<api::LaneSoulCurve>, Source)> {
+    get_json(
+        &format!(
+            "{API}/v1/analytics/lane-soul-curve?game_mode=normal&stats=player_damage{filters}"
+        ),
+        ANALYTICS,
+    )
+}
+
+/// Duo against duo in a lane: matchups played and wins over the whole match.
+pub fn lane_matchup_stats(filters: &str) -> Result<(Vec<api::LaneMatchupStats>, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/lane-matchup-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
 /// Percentiles of per-match player stats; without `bucket` one object, metric by metric.
 pub fn stat_metrics(filters: &str) -> Result<(api::PlayerStatsMetrics, Source)> {
     get_json(

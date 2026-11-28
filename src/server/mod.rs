@@ -36,10 +36,10 @@ leaver's match is a loss even if their team won.
 with nothing cached, so what it gives (Steam names, place names, awards) is missing, not empty.
 - A player's own stats: player_heroes, player_mates, player_enemies, player_deaths_map. The API has only the matches \
 someone sent it; ingest_status says whether the player sends theirs, and if not, totals can be low.
-- The meta over all players: hero_stats, hero_items, hero_counters, hero_synergies, ability_order, builds, leaderboard; \
-performance_curve and stat_percentiles place one match against the average. Filter them to the player's rank \
-(min_rank/max_rank), say how many matches a rate rests on (small samples mislead), and check patches for a balance \
-change since.
+- The meta over all players: hero_stats, hero_items, hero_counters, hero_synergies, lane_matchups (a lane duo against \
+another), ability_order, builds, leaderboard; performance_curve and stat_percentiles place one match against the \
+average. Filter them to the player's rank (min_rank/max_rank), say how many matches a rate rests on (small samples \
+mislead), and check patches for a balance change since.
 - game_lookup gives hero, ability and item names and tooltips; wiki_search and wiki_page the mechanics (cite the page \
 URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/Lore\".
 - Resources: hero cards at deadlock://hero/<hero id>, match summaries at deadlock://match/<match id>.";
@@ -51,10 +51,12 @@ they are (player_heroes: their matches on this hero) and whether the match is ra
 in the new player or low priority pool), match_lanes (each lane's soul lead at every snapshot), then match_player for \
 the player.
 3. In the player's lane, call match_player for both lane opponents and the lane partner and compare souls by source \
-(lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability \
-upgrades against ability_order. Call match_damage with until_minute 15 for who hurt the player and who finished them, \
-with what, and match_distance with until_minute 15 for the time they spent near each lane opponent. Read that time \
-against the abilities' ranges from game_lookup for the opponents' and the player's heroes.
+(lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability upgrades \
+against ability_order. Compare the lane's soul lead from match_lanes (from the player's side) with lane_matchups for \
+the player and partner against the two lane opponents: its mean and spread at the same snapshot. Call match_damage \
+with until_minute 15 for who hurt the player and who finished them, with what, and match_distance with until_minute 15 \
+for the time they spent near each lane opponent. Read that time against the abilities' ranges from game_lookup for the \
+opponents' and the player's heroes.
 4. Compare the player with the hero's meta, at their rank when the match is ranked (min_rank/max_rank as \
 player_overview names it), over all ranks otherwise: performance_curve (their net worth at each snapshot against the \
 average and its spread: when they fell behind, and which souls they lacked) and stat_percentiles (deaths, souls per \
@@ -359,6 +361,7 @@ mod tests {
                         "ingest_",
                         "performance_",
                         "stat_",
+                        "lane_",
                     ]
                     .iter()
                     .any(|p| w.starts_with(p) && w.len() > p.len())

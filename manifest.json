@@ -97,6 +97,10 @@
       "name": "ingest_status"
     },
     {
+      "description": "A lane duo against an enemy duo (or any duo): soul lead with its spread and damage lead at\neach stats snapshot, and the win rate. Upstream marks the data as subject to change.",
+      "name": "lane_matchups"
+    },
+    {
       "description": "The top players of a region's ranked leaderboard, optionally for one hero.",
       "name": "leaderboard"
     },

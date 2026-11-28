@@ -1,6 +1,6 @@
 //! The meta from the Deadlock API's analytics over all players' matches: `hero_stats`,
-//! `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`; plus `builds` and
-//! `leaderboard`.
+//! `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `lane_matchups`; plus
+//! `builds` and `leaderboard`.
 
 use std::cmp::Reverse;
 use std::fmt::Write as _;
@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::contracts::api::{
     AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats,
-    ItemSlotType, ItemStats, MetricValues, PlayerPerformanceCurvePoint,
-    PlayerStatsMetricsKey as Metric, Region,
+    ItemSlotType, ItemStats, LaneMatchupStats, LaneSoulCurve, LaneSoulCurveStatsKey, MetricValues,
+    PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric, Region,
 };
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
 use crate::domain::format::{clip, date, mmss, plain};
 use crate::domain::items::ItemKind;
 use crate::domain::terms::gold_source_name;
-use crate::http::Source;
-use crate::problem::Result;
+use crate::http::{Source, id_list};
+use crate::problem::{Problem, Result};
 use crate::sources::api;
 use crate::tools::player::steam_names;
 use crate::tools::{
@@ -790,6 +790,145 @@ fn performance_curve_from(
     }
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct LanePoint {
+    /// Game time of the stats snapshot, `m:ss`; `match_lanes` uses the same ones.
+    pub at: String,
+    /// Matchups still running at this snapshot. Fewer late in the match, as shorter matches end:
+    /// late points rest on fewer matchups.
+    pub matches: i64,
+    /// Average souls (net worth) the duo is ahead of the enemy duo by; negative = behind.
+    pub soul_lead: f64,
+    /// Standard deviation of the lead between single matchups, not the uncertainty of the
+    /// average: about two thirds of matchups are within it of `soul_lead`.
+    pub soul_lead_spread: f64,
+    /// Average damage to heroes the duo has dealt by then minus the enemy duo's; negative = less.
+    pub damage_lead: Option<f64>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct LaneMatchups {
+    /// The lane duo.
+    pub heroes: Vec<String>,
+    /// The duo they laned against; empty = against any duo.
+    pub enemy_heroes: Vec<String>,
+    /// Lanes where these duos faced each other, lanes merged; 0 when fewer than `min_matches`,
+    /// and then `points` is empty too. From the API's lane matchup stats, like `win_rate`, so it
+    /// can differ slightly from the curve's `matches` at 3:00.
+    pub matches: i64,
+    /// The duo's wins over `matches` (the whole match, not just the lane), 0..1.
+    pub win_rate: Option<f64>,
+    /// The duo's average lead at each stats snapshot (every 3 minutes up to 15:00, then every 5).
+    pub points: Vec<LanePoint>,
+    pub sources: Vec<Source>,
+}
+
+pub fn lane_matchups(
+    heroes: &[String],
+    enemy_heroes: &[String],
+    filters: &MetaFilters,
+    min_matches: u32,
+) -> Result<LaneMatchups> {
+    let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
+    let find = |names: &[String]| {
+        names
+            .iter()
+            .map(|h| cat.find_hero(h))
+            .collect::<Result<Vec<u32>>>()
+    };
+    let (duo, enemies) = (find(heroes)?, find(enemy_heroes)?);
+    let query = format!(
+        "{}&min_matches={min_matches}{}",
+        lane_query(&duo, &enemies)?,
+        filters.query()
+    );
+    let (curves, curve_source) = api::lane_soul_curve(&query)?;
+    let (records, record_source) = api::lane_matchup_stats(&query)?;
+    let sources = answer_sources([curve_source, record_source], &cat);
+    Ok(lane_matchups_from(
+        &cat, &duo, &enemies, &curves, &records, sources,
+    ))
+}
+
+/// The API's filter for a duo against a duo, or against any duo without `enemies`; lanes merged.
+fn lane_query(duo: &[u32], enemies: &[u32]) -> Result<String> {
+    // With one id the API takes any duo that includes it, so a repeated hero would widen the query.
+    let pair = |ids: &[u32]| ids.len() == 2 && ids[0] != ids[1];
+    if !pair(duo) {
+        return Err(Problem::invalid_argument(
+            "heroes: name the two different heroes of the lane duo",
+        ));
+    }
+    // Sorted, so the same matchup in another order is the same query and the same cache entry.
+    let sorted = |ids: &[u32]| {
+        let mut ids = ids.to_vec();
+        ids.sort_unstable();
+        id_list(&ids)
+    };
+    let duo = sorted(duo);
+    match enemies {
+        [] => Ok(format!("&hero_ids={duo}&group_by=hero_ids")),
+        _ if pair(enemies) => Ok(format!(
+            "&hero_ids={duo}&enemy_hero_ids={}&group_by=hero_ids,enemy_hero_ids",
+            sorted(enemies)
+        )),
+        _ => Err(Problem::invalid_argument(
+            "enemy_heroes: name both (different) heroes of the enemy lane duo, or none for the \
+             duo against any duo",
+        )),
+    }
+}
+
+fn lane_matchups_from(
+    cat: &Catalog,
+    duo: &[u32],
+    enemies: &[u32],
+    curves: &[LaneSoulCurve],
+    records: &[LaneMatchupStats],
+    sources: Vec<Source>,
+) -> LaneMatchups {
+    // The API answers with ascending id pairs.
+    let ids = |heroes: &[u32]| {
+        let mut ids: Vec<i64> = heroes.iter().map(|&h| i64::from(h)).collect();
+        ids.sort_unstable();
+        ids
+    };
+    let (duo_ids, enemy_ids) = (ids(duo), ids(enemies));
+    let record = records
+        .iter()
+        .find(|r| r.hero_ids == duo_ids && r.enemy_hero_ids == enemy_ids);
+    let points = curves
+        .iter()
+        .find(|c| c.hero_ids == duo_ids && c.enemy_hero_ids == enemy_ids)
+        .map_or_default(|c| {
+            let damage = c.stats.get(&LaneSoulCurveStatsKey::PlayerDamage);
+            c.sample_times_s
+                .iter()
+                .zip(&c.sample_matches)
+                .zip(c.net_worth_diff.iter().zip(&c.net_worth_diff_std))
+                .enumerate()
+                .filter(|(_, ((_, matches), _))| **matches > 0)
+                .map(|(i, ((&t, &matches), (&lead, &spread)))| LanePoint {
+                    at: mmss(u64::try_from(t).unwrap_or_default()),
+                    matches,
+                    soul_lead: round(lead, 0),
+                    soul_lead_spread: round(spread, 0),
+                    damage_lead: damage.and_then(|d| d.diff.get(i)).map(|&d| round(d, 0)),
+                })
+                .collect()
+        });
+    let name = |heroes: &[u32]| heroes.iter().map(|&h| cat.hero(h)).collect();
+    LaneMatchups {
+        heroes: name(duo),
+        enemy_heroes: name(enemies),
+        matches: record.map_or(0, |r| r.matches_played),
+        win_rate: record.and_then(|r| win_rate(r.wins, r.matches_played)),
+        points,
+        sources,
+    }
+}
+
 /// The metrics `stat_percentiles` gives when none are asked for.
 const DEFAULT_METRICS: [Metric; 7] = [
     Metric::NetWorthPerMin,
@@ -1139,6 +1278,105 @@ mod tests {
                 {"source": "breakables (crates)", "souls": 12.0},
             ])
         );
+    }
+
+    fn lane_fixtures() -> (Vec<LaneSoulCurve>, Vec<LaneMatchupStats>) {
+        (
+            fixture(include_str!(
+                "../../contracts/fixtures/lane_soul_curve.json"
+            )),
+            fixture(include_str!(
+                "../../contracts/fixtures/lane_matchup_stats.json"
+            )),
+        )
+    }
+
+    fn lane_catalog() -> Catalog {
+        Catalog::test(&[
+            (11, "Dynamo"),
+            (76, "Graves"),
+            (84, "Rat King"),
+            (85, "Solomon"),
+        ])
+    }
+
+    #[test]
+    fn lane_matchups_map_the_curve_to_points() {
+        let (mut curves, records) = lane_fixtures();
+        let cat = lane_catalog();
+        // Enemies in another order than the API's ascending pair still find the row.
+        let lanes = lane_matchups_from(&cat, &[76, 11], &[85, 84], &curves, &records, Vec::new());
+        assert_eq!(
+            serde_json::to_value(&lanes).unwrap(),
+            serde_json::json!({
+                "heroes": ["Graves", "Dynamo"],
+                "enemy_heroes": ["Solomon", "Rat King"],
+                "matches": 124,
+                "win_rate": 0.516,
+                "points": [
+                    {"at": "3:00", "matches": 124, "soul_lead": -38.0, "soul_lead_spread": 599.0,
+                     "damage_lead": -605.0},
+                    {"at": "6:00", "matches": 124, "soul_lead": -75.0, "soul_lead_spread": 1181.0,
+                     "damage_lead": -1936.0},
+                    {"at": "9:00", "matches": 124, "soul_lead": -656.0,
+                     "soul_lead_spread": 1872.0, "damage_lead": -3833.0},
+                    {"at": "12:00", "matches": 124, "soul_lead": -1024.0,
+                     "soul_lead_spread": 2745.0, "damage_lead": -5067.0},
+                    {"at": "15:00", "matches": 124, "soul_lead": -951.0,
+                     "soul_lead_spread": 3658.0, "damage_lead": -6130.0},
+                ],
+                "sources": [],
+            })
+        );
+        // A snapshot no matchup reached is left out; a missing damage curve leaves only its lead
+        // empty.
+        curves[0].sample_matches[4] = 0;
+        curves[0].stats.clear();
+        let lanes = lane_matchups_from(&cat, &[11, 76], &[84, 85], &curves, &records, Vec::new());
+        assert_eq!(lanes.points.len(), 4);
+        assert_eq!(lanes.points[3].at, "12:00");
+        assert_eq!(lanes.points[3].damage_lead, None);
+    }
+
+    #[test]
+    fn lane_matchups_without_rows_are_empty() {
+        let (curves, records) = lane_fixtures();
+        let cat = lane_catalog();
+        // Rows of another matchup (here: the duo against anyone) don't count.
+        let lanes = lane_matchups_from(&cat, &[11, 76], &[], &curves, &records, Vec::new());
+        assert_eq!(
+            serde_json::to_value(&lanes).unwrap(),
+            serde_json::json!({
+                "heroes": ["Dynamo", "Graves"],
+                "enemy_heroes": [],
+                "matches": 0,
+                "win_rate": null,
+                "points": [],
+                "sources": [],
+            })
+        );
+        let lanes = lane_matchups_from(&cat, &[11, 76], &[84, 85], &[], &[], Vec::new());
+        assert_eq!((lanes.matches, lanes.points.len()), (0, 0));
+    }
+
+    #[test]
+    fn lane_query_takes_two_enemies_or_none() {
+        let query =
+            |duo: &[u32], enemies: &[u32]| lane_query(duo, enemies).map_err(|p| p.message());
+        assert_eq!(
+            query(&[11, 76], &[84, 85]).as_deref(),
+            Ok("&hero_ids=11,76&enemy_hero_ids=84,85&group_by=hero_ids,enemy_hero_ids")
+        );
+        // Order doesn't matter: one query, one cache entry.
+        assert_eq!(query(&[76, 11], &[85, 84]), query(&[11, 76], &[84, 85]));
+        assert_eq!(
+            query(&[11, 76], &[]).as_deref(),
+            Ok("&hero_ids=11,76&group_by=hero_ids")
+        );
+        let one = query(&[11, 76], &[84]).unwrap_err();
+        assert!(one.contains("enemy_heroes: name both"), "{one}");
+        assert!(query(&[11, 76], &[84, 84]).is_err());
+        assert!(query(&[11, 11], &[]).unwrap_err().contains("heroes:"));
     }
 
     #[test]

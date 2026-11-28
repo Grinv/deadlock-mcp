@@ -1,0 +1,19 @@
+[
+ {
+  "assigned_lane": 0,
+  "hero_ids": [
+   11,
+   76
+  ],
+  "enemy_hero_ids": [
+   84,
+   85
+  ],
+  "wins": 64,
+  "matches_played": 124,
+  "sample_time_s": 900,
+  "net_worth_diff": -951.1,
+  "sample_matches": 124,
+  "stats": {}
+ }
+]

@@ -34,6 +34,8 @@ const API_SCHEMAS: &[&str] = &[
     "Item",
     "ItemStats",
     "KillDeathStats",
+    "LaneMatchupStats",
+    "LaneSoulCurve",
     "Leaderboard",
     "MapData",
     "MateStats",

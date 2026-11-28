@@ -1,4 +1,4 @@
-//! The meta tools: hero statistics, builds, patches and the leaderboard.
+//! The meta tools: hero statistics, lane matchups, builds, patches and the leaderboard.
 
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
@@ -13,6 +13,11 @@ use crate::tools::{MetaFilters, game, meta};
 
 const fn default_hundred() -> u32 {
     100
+}
+
+/// Duo against duo meets far less often than hero against hero.
+const fn default_thirty() -> u32 {
+    30
 }
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -126,6 +131,34 @@ pub struct HeroPairArgs {
     #[serde(default)]
     #[garde(length(max = 11), inner(length(chars, min = 1, max = 50)))]
     pub heroes: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema, garde::Validate)]
+#[serde(deny_unknown_fields)]
+pub struct LaneMatchupsArgs {
+    /// The two heroes of the lane duo: names (or unique parts of them) or hero ids.
+    #[garde(length(min = 2, max = 2), inner(length(chars, min = 1, max = 50)))]
+    pub heroes: Vec<String>,
+    /// The two heroes they laned against; leave out for the duo against any duo.
+    #[serde(default)]
+    #[garde(length(max = 2), inner(length(chars, min = 1, max = 50)))]
+    pub enemy_heroes: Vec<String>,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
+    /// Answer with `matches` 0 and no points when the duos met in fewer lanes. Few lanes give a
+    /// rough mean: say how many the answer rests on.
+    #[serde(default = "default_thirty")]
+    #[garde(range(min = 1))]
+    pub min_matches: u32,
 }
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
@@ -315,6 +348,22 @@ impl DeadlockServer {
             meta::hero_synergies(&a.hero, &f, a.min_matches, a.same_lane, a.limit, &a.heroes)
         })
         .await
+    }
+
+    /// A lane duo against an enemy duo (or any duo): soul lead with its spread and damage lead at
+    /// each stats snapshot, and the win rate. Upstream marks the data as subject to change.
+    #[tool(
+        title = "Lane matchups",
+        input_schema = input_schema::<LaneMatchupsArgs>(),
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
+    async fn lane_matchups(
+        &self,
+        Parameters(raw): Parameters<rmcp::model::JsonObject>,
+    ) -> Result<Json<meta::LaneMatchups>, CallToolResult> {
+        let a: LaneMatchupsArgs = parse(raw)?;
+        let f = filters(a.min_rank, a.max_rank, a.days);
+        run(move || meta::lane_matchups(&a.heroes, &a.enemy_heroes, &f, a.min_matches)).await
     }
 
     /// A hero's most common and best-winning ability upgrade orders.

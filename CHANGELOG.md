@@ -8,8 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `lane_matchups`: how a lane duo does against an enemy duo, or against any duo: the average soul
+  lead with its spread and the damage lead at each stats snapshot, and the win rate. Built on the
+  API's lane soul curve and lane matchup stats, which the API marks as subject to change.
 - `match_damage`: who damaged a player and whom they damaged, by ability, weapon and item, who
-  finished them (killing damage) and the crowd control they took, up to a minute or the match end.
+  finished them (killing damage) and the seconds of crowd control they took, up to a minute or the
+  match end; the non-heroes (troopers, objectives, the Midboss, summons) are reported apart.
 - `match_distance`: how many seconds a player stood within 10, 20, 30, 45 and 60 m of each other
   hero in a window of the match.
 - `match_summary` lists the objectives destroyed, in order; `match_player` the ability upgrades, in
@@ -22,12 +26,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- `contracts/openapi.json` carries the Deadlock API's MIT license in `contracts/openapi.LICENSE`.
 - The server instructions are shorter: a map of the tools and the rules that span them.
 - The `review_match` prompt starts from the whole match, compares the lane with both opponents and
   the partner, and checks each conclusion against a second figure.
 
 ### Fixed
 
+- An error page from the gateway in front of the API (Cloudflare) comes back as its title, e.g.
+  "504: Gateway time-out", instead of its HTML.
 - Seven heroes lost an ability whose tooltip has no text of its own, among them Solomon's Develop
   Queen and Graves' Borrowed Decree; a hero's abilities are now its signature and ultimate ones.
 - `player_overview` gives `rank: null` when the API holds no ranked match of the player, instead of

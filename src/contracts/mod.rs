@@ -91,6 +91,18 @@ mod tests {
             "../../contracts/fixtures/performance_curve.json"
         ));
         assert_eq!(curve[0].game_time, 180);
+        let lane: Vec<api::LaneSoulCurve> = parse(include_str!(
+            "../../contracts/fixtures/lane_soul_curve.json"
+        ));
+        assert!(
+            lane[0]
+                .stats
+                .contains_key(&api::LaneSoulCurveStatsKey::PlayerDamage)
+        );
+        let lane: Vec<api::LaneMatchupStats> = parse(include_str!(
+            "../../contracts/fixtures/lane_matchup_stats.json"
+        ));
+        assert_eq!(lane[0].hero_ids, [11, 76]);
         let metrics: api::PlayerStatsMetrics =
             parse(include_str!("../../contracts/fixtures/stat_metrics.json"));
         assert!(metrics.contains_key(&api::PlayerStatsMetricsKey::NetWorthPerMin));

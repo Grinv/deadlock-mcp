@@ -15,8 +15,8 @@ use crate::domain::format::mmss;
 use crate::domain::map::{self, UNITS_PER_M};
 use crate::http::Source;
 use crate::problem::{Problem, Result};
-use crate::tools::answer_sources;
 use crate::tools::matches::{find_player, load};
+use crate::tools::{answer_sources, round};
 
 /// The game records each hit twice: once under one of these groups and once under its specific
 /// source. The groups are the game's (Scrap Grenade counts as `Bullet`), not damage types.
@@ -40,25 +40,31 @@ pub struct SourceDamage {
     pub damage: u32,
 }
 
+/// What a hero (or the non-heroes) and the player did to each other.
 #[derive(Serialize, JsonSchema)]
-pub struct DamageBetween {
-    pub hero: String,
-    pub ally: bool,
-    /// Damage this hero dealt to the player.
+pub struct Exchange {
+    /// Damage they dealt to the player.
     pub received: u32,
-    /// Damage the player dealt to this hero.
+    /// Damage the player dealt to them.
     pub dealt: u32,
     /// `received` by what dealt it, most first.
     pub received_by_source: Vec<SourceDamage>,
     /// `dealt` by what dealt it, most first.
     pub dealt_by_source: Vec<SourceDamage>,
-    /// This hero's damage in the sequences that killed the player (the game's lethal damage): about
-    /// the player's health per death they took part in, 0 when they took part in none.
+    /// Their damage in the last ~40 s before each time the player's health reached 0, Rejuvenator
+    /// revives included (the game's lethal damage; it doesn't document the exact window).
     pub killing_damage: u32,
-    /// Crowd control this hero put on the player, by type (slow, stun, root, silence, sleep,
-    /// tether...). The game doesn't document the unit (it looks like milliseconds); compare it
-    /// between heroes, not with seconds.
-    pub crowd_control: BTreeMap<String, u32>,
+    /// Seconds of crowd control they put on the player, by type (slow, stun, root, silence,
+    /// sleep, tether...).
+    pub crowd_control_s: BTreeMap<String, f64>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DamageBetween {
+    pub hero: String,
+    pub ally: bool,
+    #[serde(flatten)]
+    pub exchange: Exchange,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -74,10 +80,14 @@ pub struct DamageReport {
     /// Damage heroes dealt to the player, not troopers, Guardians or neutrals; at the match end,
     /// `match_player`'s `damage_taken`.
     pub damage_received: u32,
-    /// Heroes' damage in the sequences that killed the player.
+    /// Heroes' damage before each time the player's health reached 0 (see `killing_damage`).
     pub killing_damage_received: u32,
     /// Every enemy, and allies that damaged the player or were damaged by them, by `received`.
     pub players: Vec<DamageBetween>,
+    /// Everything that isn't a hero, as the game records it, in one: troopers, neutrals, Guardians,
+    /// Walkers, Base Guardians, the Patron, Shrines, the Midboss, heroes' summons and props. Most
+    /// of their damage has no named source.
+    pub non_heroes: Exchange,
     pub sources: Vec<Source>,
 }
 
@@ -128,7 +138,29 @@ struct Tally {
     crowd_control: BTreeMap<String, u32>,
 }
 
-/// What the player and each other player (by slot) did to each other, at sample `k`.
+/// The tally key of everything that isn't a hero: the game records them all in slot 0.
+const NON_HEROES: u32 = u32::MAX;
+
+impl From<Tally> for Exchange {
+    fn from(t: Tally) -> Self {
+        Self {
+            received: t.received,
+            dealt: t.dealt,
+            received_by_source: by_damage(t.received_by_source),
+            dealt_by_source: by_damage(t.dealt_by_source),
+            killing_damage: t.killing_damage,
+            // The game records crowd control in milliseconds.
+            crowd_control_s: t
+                .crowd_control
+                .into_iter()
+                .map(|(kind, ms)| (kind, round(f64::from(ms) / 1000.0, 1)))
+                .collect(),
+        }
+    }
+}
+
+/// What the player and each other player (by slot) did to each other, at sample `k`; what is
+/// between the player and the non-heroes is under `NON_HEROES`.
 fn tallies(
     cat: &Catalog,
     matrix: &CMsgMatchPlayerDamageMatrix,
@@ -162,17 +194,16 @@ fn tallies(
                     .and_then(|j| to.damage.get(j))
                     .copied()
                     .unwrap_or_default();
-                // Other slots are troopers, Guardians and neutrals.
-                if value == 0
-                    || !players.contains(&from)
-                    || !players.contains(&target)
-                    || (from == me) == (target == me)
-                {
+                if value == 0 || (from == me) == (target == me) {
                     continue;
                 }
-                let tally = tallies
-                    .entry(if from == me { target } else { from })
-                    .or_default();
+                let other = if from == me { target } else { from };
+                let key = if players.contains(&other) {
+                    other
+                } else {
+                    NON_HEROES
+                };
+                let tally = tallies.entry(key).or_default();
                 match stat {
                     Some(EStatType::KETypeDamage) if group && from == me => tally.dealt += value,
                     Some(EStatType::KETypeDamage) if group => tally.received += value,
@@ -242,26 +273,23 @@ fn damage_from(
             Some(DamageBetween {
                 hero: cat.hero(q.hero_id()),
                 ally,
-                received: t.received,
-                dealt: t.dealt,
-                received_by_source: by_damage(t.received_by_source),
-                dealt_by_source: by_damage(t.dealt_by_source),
-                killing_damage: t.killing_damage,
-                crowd_control: t.crowd_control,
+                exchange: t.into(),
             })
         })
         .collect();
-    between.sort_by_key(|b| Reverse(b.received));
+    between.sort_by_key(|b| Reverse(b.exchange.received));
+    let non_heroes = tallies.remove(&NON_HEROES).unwrap_or_default().into();
 
     Ok(DamageReport {
         match_id,
         account_id,
         hero: cat.hero(p.hero_id()),
         until: mmss(u64::from(times[k])),
-        damage_dealt: between.iter().map(|b| b.dealt).sum(),
-        damage_received: between.iter().map(|b| b.received).sum(),
-        killing_damage_received: between.iter().map(|b| b.killing_damage).sum(),
+        damage_dealt: between.iter().map(|b| b.exchange.dealt).sum(),
+        damage_received: between.iter().map(|b| b.exchange.received).sum(),
+        killing_damage_received: between.iter().map(|b| b.exchange.killing_damage).sum(),
         players: between,
+        non_heroes,
         sources,
     })
 }
@@ -597,11 +625,10 @@ mod tests {
         let details = matrix.source_details.as_ref().unwrap();
         for dealer in &matrix.damage_dealers {
             let slot = dealer.dealer_player_slot();
-            let p = info
-                .players
-                .iter()
-                .find(|p| p.player_slot() == slot)
-                .unwrap();
+            // Slot 0 is the non-heroes, with no damage stat of their own.
+            let Some(p) = info.players.iter().find(|p| p.player_slot() == slot) else {
+                continue;
+            };
             // The group rows to players (slots 1 to 12) add up to the game's own damage stat.
             let groups: u32 = dealer
                 .damage_sources
@@ -619,10 +646,34 @@ mod tests {
             let r = damage_from(&cat(), MATCH, p.account_id(), &info, None, Vec::new()).unwrap();
             assert_eq!((r.until.as_str(), r.damage_dealt), ("39:53", stat));
             for b in &r.players {
-                let by_source: u32 = b.dealt_by_source.iter().map(|s| s.damage).sum();
-                assert_eq!(by_source, b.dealt, "{}", b.hero);
+                let by_source: u32 = b.exchange.dealt_by_source.iter().map(|s| s.damage).sum();
+                assert_eq!(by_source, b.exchange.dealt, "{}", b.hero);
             }
         }
+    }
+
+    /// Slot 0, everything that isn't a hero, stays out of the heroes' totals and is reported apart.
+    /// The fixture keeps slot 0's rows aimed at H72; the numbers are the matrix's own.
+    #[test]
+    fn non_heroes_are_reported_apart() {
+        let info = fixture();
+        let r = |until| damage_from(&cat(), MATCH, ME, &info, until, Vec::new()).unwrap();
+        let lane = r(Some(15));
+        assert_eq!(
+            (lane.non_heroes.received, lane.non_heroes.dealt),
+            (5730, 17356)
+        );
+        let end = r(None);
+        assert_eq!(
+            (
+                end.non_heroes.received,
+                end.non_heroes.dealt,
+                end.non_heroes.killing_damage
+            ),
+            (12972, 60429, 2587)
+        );
+        // Slot 0 adds nothing to the heroes' damage: the fixture's only hero dealer to H72 is H79.
+        assert_eq!(end.damage_received, 8871);
     }
 
     #[test]
@@ -634,10 +685,14 @@ mod tests {
         assert_eq!((lane.until.as_str(), lane.damage_dealt), ("15:00", 4415));
         assert_eq!(mine(Some(17)).until, "15:00");
         let h79 = with(&lane, "H79");
-        assert_eq!((h79.received, h79.dealt, h79.ally), (2691, 1089, false));
+        assert!(!h79.ally);
+        let h79 = &h79.exchange;
+        assert_eq!((h79.received, h79.dealt), (2691, 1089));
         // H79 took part in two of H72's deaths by then (1:58 and 9:35).
         assert!(h79.killing_damage > 1000, "{}", h79.killing_damage);
-        assert_eq!(h79.crowd_control.values().sum::<u32>(), 22374);
+        // 22374 ms in all.
+        let cc: f64 = h79.crowd_control_s.values().sum();
+        assert!((cc - 22.4).abs() < 0.2, "{cc}");
         // Only H79's own damage is in the fixture, so the other enemies dealt none; allies with
         // no damage either way are left out.
         assert_eq!(lane.damage_received, 2691);
@@ -647,9 +702,13 @@ mod tests {
         // Both dealers' rows agree.
         let end = mine(None);
         let theirs = damage_from(&cat(), MATCH, H79, &info, None, Vec::new()).unwrap();
-        assert_eq!(with(&end, "H79").received, with(&theirs, "H72").dealt);
-        assert_eq!(with(&end, "H79").received, 8871);
+        assert_eq!(
+            with(&end, "H79").exchange.received,
+            with(&theirs, "H72").exchange.dealt
+        );
+        assert_eq!(with(&end, "H79").exchange.received, 8871);
         let sources: Vec<&str> = with(&end, "H79")
+            .exchange
             .dealt_by_source
             .iter()
             .map(|s| s.source.as_str())

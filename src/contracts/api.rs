@@ -2405,6 +2405,554 @@ pub struct LaneInfo {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub objective_color: ::std::option::Option<Color>,
 }
+///One requested stat, read at `sample_time_s` and averaged over the matchups that reached it.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct LaneMatchupStat {
+    ///Mean of the duo's combined value minus the enemy duo's. Negative means behind.
+    pub diff: f64,
+    ///Population standard deviation of `diff` across the counted matchups.
+    pub diff_std: f64,
+    ///Mean of the duo's combined value, summed over its two players.
+    pub value: f64,
+    ///Population standard deviation of `value` across the counted matchups.
+    pub value_std: f64,
+}
+///**⚠️ Subject to change:** newly added, fields may change or be removed without notice.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct LaneMatchupStats {
+    ///The lane the matchup was played in, or `0` when `assigned_lane` was grouped away. See the `lane_info` array of <https://api.deadlock-api.com/v1/assets/generic-data>.
+    pub assigned_lane: i64,
+    ///The ascending hero id pair they laned against, or empty when grouped away.
+    pub enemy_hero_ids: ::std::vec::Vec<i64>,
+    ///The ascending hero id pair that shared the lane, or empty when grouped away. See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_ids: ::std::vec::Vec<i64>,
+    ///The total number of lane matchups between `hero_ids` and `enemy_hero_ids` in this lane.
+    pub matches_played: i64,
+    /**Mean souls the duo is ahead by at `sample_time_s`, against that duo. Negative means behind.
+    `0` when no counted matchup lasted that long.*/
+    pub net_worth_diff: f64,
+    /**How many of `matches_played` lasted to `sample_time_s` with all four players still in. Every
+    reading on this row rests on those matchups only.*/
+    pub sample_matches: i64,
+    ///Seconds into the match the stat readings were taken at. Echoes the `sample_time_s` parameter.
+    pub sample_time_s: i64,
+    ///A reading per stat named in `stats`. Empty unless the parameter was set.
+    pub stats: ::std::collections::HashMap<LaneMatchupStatsStatsKey, LaneMatchupStat>,
+    ///The number of matches `hero_ids` won against `enemy_hero_ids` in this lane.
+    pub wins: i64,
+}
+///Per-tick columns of `match_player.stats`. Every variant's `snake_case` name *is* its column name.
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum LaneMatchupStatsStatsKey {
+    #[serde(rename = "net_worth")]
+    NetWorth,
+    #[serde(rename = "kills")]
+    Kills,
+    #[serde(rename = "deaths")]
+    Deaths,
+    #[serde(rename = "assists")]
+    Assists,
+    #[serde(rename = "denies")]
+    Denies,
+    #[serde(rename = "creep_kills")]
+    CreepKills,
+    #[serde(rename = "neutral_kills")]
+    NeutralKills,
+    #[serde(rename = "possible_creeps")]
+    PossibleCreeps,
+    #[serde(rename = "creep_damage")]
+    CreepDamage,
+    #[serde(rename = "neutral_damage")]
+    NeutralDamage,
+    #[serde(rename = "boss_damage")]
+    BossDamage,
+    #[serde(rename = "player_damage")]
+    PlayerDamage,
+    #[serde(rename = "player_damage_taken")]
+    PlayerDamageTaken,
+    #[serde(rename = "player_healing")]
+    PlayerHealing,
+    #[serde(rename = "self_healing")]
+    SelfHealing,
+    #[serde(rename = "self_damage")]
+    SelfDamage,
+    #[serde(rename = "teammate_healing")]
+    TeammateHealing,
+    #[serde(rename = "teammate_barriering")]
+    TeammateBarriering,
+    #[serde(rename = "player_barriering")]
+    PlayerBarriering,
+    #[serde(rename = "damage_mitigated")]
+    DamageMitigated,
+    #[serde(rename = "damage_absorbed")]
+    DamageAbsorbed,
+    #[serde(rename = "absorption_provided")]
+    AbsorptionProvided,
+    #[serde(rename = "heal_prevented")]
+    HealPrevented,
+    #[serde(rename = "heal_lost")]
+    HealLost,
+    #[serde(rename = "level")]
+    Level,
+    #[serde(rename = "ability_points")]
+    AbilityPoints,
+    #[serde(rename = "max_health")]
+    MaxHealth,
+    #[serde(rename = "weapon_power")]
+    WeaponPower,
+    #[serde(rename = "tech_power")]
+    TechPower,
+    #[serde(rename = "shots_hit")]
+    ShotsHit,
+    #[serde(rename = "shots_missed")]
+    ShotsMissed,
+    #[serde(rename = "hero_bullets_hit")]
+    HeroBulletsHit,
+    #[serde(rename = "hero_bullets_hit_crit")]
+    HeroBulletsHitCrit,
+    #[serde(rename = "bullet_kills")]
+    BulletKills,
+    #[serde(rename = "melee_kills")]
+    MeleeKills,
+    #[serde(rename = "ability_kills")]
+    AbilityKills,
+    #[serde(rename = "headshot_kills")]
+    HeadshotKills,
+    #[serde(rename = "gold_player")]
+    GoldPlayer,
+    #[serde(rename = "gold_player_orbs")]
+    GoldPlayerOrbs,
+    #[serde(rename = "gold_lane_creep")]
+    GoldLaneCreep,
+    #[serde(rename = "gold_lane_creep_orbs")]
+    GoldLaneCreepOrbs,
+    #[serde(rename = "gold_neutral_creep")]
+    GoldNeutralCreep,
+    #[serde(rename = "gold_neutral_creep_orbs")]
+    GoldNeutralCreepOrbs,
+    #[serde(rename = "gold_boss")]
+    GoldBoss,
+    #[serde(rename = "gold_boss_orb")]
+    GoldBossOrb,
+    #[serde(rename = "gold_treasure")]
+    GoldTreasure,
+    #[serde(rename = "gold_denied")]
+    GoldDenied,
+    #[serde(rename = "gold_death_loss")]
+    GoldDeathLoss,
+}
+impl ::std::fmt::Display for LaneMatchupStatsStatsKey {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::NetWorth => f.write_str("net_worth"),
+            Self::Kills => f.write_str("kills"),
+            Self::Deaths => f.write_str("deaths"),
+            Self::Assists => f.write_str("assists"),
+            Self::Denies => f.write_str("denies"),
+            Self::CreepKills => f.write_str("creep_kills"),
+            Self::NeutralKills => f.write_str("neutral_kills"),
+            Self::PossibleCreeps => f.write_str("possible_creeps"),
+            Self::CreepDamage => f.write_str("creep_damage"),
+            Self::NeutralDamage => f.write_str("neutral_damage"),
+            Self::BossDamage => f.write_str("boss_damage"),
+            Self::PlayerDamage => f.write_str("player_damage"),
+            Self::PlayerDamageTaken => f.write_str("player_damage_taken"),
+            Self::PlayerHealing => f.write_str("player_healing"),
+            Self::SelfHealing => f.write_str("self_healing"),
+            Self::SelfDamage => f.write_str("self_damage"),
+            Self::TeammateHealing => f.write_str("teammate_healing"),
+            Self::TeammateBarriering => f.write_str("teammate_barriering"),
+            Self::PlayerBarriering => f.write_str("player_barriering"),
+            Self::DamageMitigated => f.write_str("damage_mitigated"),
+            Self::DamageAbsorbed => f.write_str("damage_absorbed"),
+            Self::AbsorptionProvided => f.write_str("absorption_provided"),
+            Self::HealPrevented => f.write_str("heal_prevented"),
+            Self::HealLost => f.write_str("heal_lost"),
+            Self::Level => f.write_str("level"),
+            Self::AbilityPoints => f.write_str("ability_points"),
+            Self::MaxHealth => f.write_str("max_health"),
+            Self::WeaponPower => f.write_str("weapon_power"),
+            Self::TechPower => f.write_str("tech_power"),
+            Self::ShotsHit => f.write_str("shots_hit"),
+            Self::ShotsMissed => f.write_str("shots_missed"),
+            Self::HeroBulletsHit => f.write_str("hero_bullets_hit"),
+            Self::HeroBulletsHitCrit => f.write_str("hero_bullets_hit_crit"),
+            Self::BulletKills => f.write_str("bullet_kills"),
+            Self::MeleeKills => f.write_str("melee_kills"),
+            Self::AbilityKills => f.write_str("ability_kills"),
+            Self::HeadshotKills => f.write_str("headshot_kills"),
+            Self::GoldPlayer => f.write_str("gold_player"),
+            Self::GoldPlayerOrbs => f.write_str("gold_player_orbs"),
+            Self::GoldLaneCreep => f.write_str("gold_lane_creep"),
+            Self::GoldLaneCreepOrbs => f.write_str("gold_lane_creep_orbs"),
+            Self::GoldNeutralCreep => f.write_str("gold_neutral_creep"),
+            Self::GoldNeutralCreepOrbs => f.write_str("gold_neutral_creep_orbs"),
+            Self::GoldBoss => f.write_str("gold_boss"),
+            Self::GoldBossOrb => f.write_str("gold_boss_orb"),
+            Self::GoldTreasure => f.write_str("gold_treasure"),
+            Self::GoldDenied => f.write_str("gold_denied"),
+            Self::GoldDeathLoss => f.write_str("gold_death_loss"),
+        }
+    }
+}
+impl ::std::str::FromStr for LaneMatchupStatsStatsKey {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "net_worth" => Ok(Self::NetWorth),
+            "kills" => Ok(Self::Kills),
+            "deaths" => Ok(Self::Deaths),
+            "assists" => Ok(Self::Assists),
+            "denies" => Ok(Self::Denies),
+            "creep_kills" => Ok(Self::CreepKills),
+            "neutral_kills" => Ok(Self::NeutralKills),
+            "possible_creeps" => Ok(Self::PossibleCreeps),
+            "creep_damage" => Ok(Self::CreepDamage),
+            "neutral_damage" => Ok(Self::NeutralDamage),
+            "boss_damage" => Ok(Self::BossDamage),
+            "player_damage" => Ok(Self::PlayerDamage),
+            "player_damage_taken" => Ok(Self::PlayerDamageTaken),
+            "player_healing" => Ok(Self::PlayerHealing),
+            "self_healing" => Ok(Self::SelfHealing),
+            "self_damage" => Ok(Self::SelfDamage),
+            "teammate_healing" => Ok(Self::TeammateHealing),
+            "teammate_barriering" => Ok(Self::TeammateBarriering),
+            "player_barriering" => Ok(Self::PlayerBarriering),
+            "damage_mitigated" => Ok(Self::DamageMitigated),
+            "damage_absorbed" => Ok(Self::DamageAbsorbed),
+            "absorption_provided" => Ok(Self::AbsorptionProvided),
+            "heal_prevented" => Ok(Self::HealPrevented),
+            "heal_lost" => Ok(Self::HealLost),
+            "level" => Ok(Self::Level),
+            "ability_points" => Ok(Self::AbilityPoints),
+            "max_health" => Ok(Self::MaxHealth),
+            "weapon_power" => Ok(Self::WeaponPower),
+            "tech_power" => Ok(Self::TechPower),
+            "shots_hit" => Ok(Self::ShotsHit),
+            "shots_missed" => Ok(Self::ShotsMissed),
+            "hero_bullets_hit" => Ok(Self::HeroBulletsHit),
+            "hero_bullets_hit_crit" => Ok(Self::HeroBulletsHitCrit),
+            "bullet_kills" => Ok(Self::BulletKills),
+            "melee_kills" => Ok(Self::MeleeKills),
+            "ability_kills" => Ok(Self::AbilityKills),
+            "headshot_kills" => Ok(Self::HeadshotKills),
+            "gold_player" => Ok(Self::GoldPlayer),
+            "gold_player_orbs" => Ok(Self::GoldPlayerOrbs),
+            "gold_lane_creep" => Ok(Self::GoldLaneCreep),
+            "gold_lane_creep_orbs" => Ok(Self::GoldLaneCreepOrbs),
+            "gold_neutral_creep" => Ok(Self::GoldNeutralCreep),
+            "gold_neutral_creep_orbs" => Ok(Self::GoldNeutralCreepOrbs),
+            "gold_boss" => Ok(Self::GoldBoss),
+            "gold_boss_orb" => Ok(Self::GoldBossOrb),
+            "gold_treasure" => Ok(Self::GoldTreasure),
+            "gold_denied" => Ok(Self::GoldDenied),
+            "gold_death_loss" => Ok(Self::GoldDeathLoss),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for LaneMatchupStatsStatsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for LaneMatchupStatsStatsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///**⚠️ Subject to change:** newly added, fields may change or be removed without notice.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct LaneSoulCurve {
+    ///The lane the matchup was played in, or `0` when `assigned_lane` was grouped away. See the `lane_info` array of <https://api.deadlock-api.com/v1/assets/generic-data>.
+    pub assigned_lane: i64,
+    ///The ascending hero id pair they laned against, or empty when grouped away.
+    pub enemy_hero_ids: ::std::vec::Vec<i64>,
+    ///The ascending hero id pair that shared the lane, or empty when grouped away. See more: <https://api.deadlock-api.com/v1/assets/heroes>
+    pub hero_ids: ::std::vec::Vec<i64>,
+    /**Lane matchups behind the row, counted at its *first* sample. This is what `min_matches` and
+    `max_matches` filter on, so it does not move when the requested time range changes; read
+    `sample_matches` for what any individual point rests on.*/
+    pub matches_played: i64,
+    /**Mean souls the duo is ahead by at the matching entry of `sample_times_s`. Negative means
+    behind. Same length as `sample_times_s`.*/
+    pub net_worth_diff: ::std::vec::Vec<f64>,
+    /**Population standard deviation of the lead across the counted matchups, at the matching entry
+    of `sample_times_s`. Same length as `sample_times_s`.
+
+    Spread between individual games, not uncertainty about the mean: it stays wide however many
+    matchups are counted, because lane outcomes genuinely differ that much.*/
+    pub net_worth_diff_std: ::std::vec::Vec<f64>,
+    /**How many lane matchups were still running at the matching entry of `sample_times_s`.
+    Falls off towards the end of the curve as shorter matches drop out.*/
+    pub sample_matches: ::std::vec::Vec<i64>,
+    ///Seconds into the match each entry of the curves was sampled at, ascending.
+    pub sample_times_s: ::std::vec::Vec<i64>,
+    ///A curve per stat named in `stats`. Empty unless the parameter was set.
+    pub stats: ::std::collections::HashMap<LaneSoulCurveStatsKey, LaneStatCurve>,
+}
+///Per-tick columns of `match_player.stats`. Every variant's `snake_case` name *is* its column name.
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum LaneSoulCurveStatsKey {
+    #[serde(rename = "net_worth")]
+    NetWorth,
+    #[serde(rename = "kills")]
+    Kills,
+    #[serde(rename = "deaths")]
+    Deaths,
+    #[serde(rename = "assists")]
+    Assists,
+    #[serde(rename = "denies")]
+    Denies,
+    #[serde(rename = "creep_kills")]
+    CreepKills,
+    #[serde(rename = "neutral_kills")]
+    NeutralKills,
+    #[serde(rename = "possible_creeps")]
+    PossibleCreeps,
+    #[serde(rename = "creep_damage")]
+    CreepDamage,
+    #[serde(rename = "neutral_damage")]
+    NeutralDamage,
+    #[serde(rename = "boss_damage")]
+    BossDamage,
+    #[serde(rename = "player_damage")]
+    PlayerDamage,
+    #[serde(rename = "player_damage_taken")]
+    PlayerDamageTaken,
+    #[serde(rename = "player_healing")]
+    PlayerHealing,
+    #[serde(rename = "self_healing")]
+    SelfHealing,
+    #[serde(rename = "self_damage")]
+    SelfDamage,
+    #[serde(rename = "teammate_healing")]
+    TeammateHealing,
+    #[serde(rename = "teammate_barriering")]
+    TeammateBarriering,
+    #[serde(rename = "player_barriering")]
+    PlayerBarriering,
+    #[serde(rename = "damage_mitigated")]
+    DamageMitigated,
+    #[serde(rename = "damage_absorbed")]
+    DamageAbsorbed,
+    #[serde(rename = "absorption_provided")]
+    AbsorptionProvided,
+    #[serde(rename = "heal_prevented")]
+    HealPrevented,
+    #[serde(rename = "heal_lost")]
+    HealLost,
+    #[serde(rename = "level")]
+    Level,
+    #[serde(rename = "ability_points")]
+    AbilityPoints,
+    #[serde(rename = "max_health")]
+    MaxHealth,
+    #[serde(rename = "weapon_power")]
+    WeaponPower,
+    #[serde(rename = "tech_power")]
+    TechPower,
+    #[serde(rename = "shots_hit")]
+    ShotsHit,
+    #[serde(rename = "shots_missed")]
+    ShotsMissed,
+    #[serde(rename = "hero_bullets_hit")]
+    HeroBulletsHit,
+    #[serde(rename = "hero_bullets_hit_crit")]
+    HeroBulletsHitCrit,
+    #[serde(rename = "bullet_kills")]
+    BulletKills,
+    #[serde(rename = "melee_kills")]
+    MeleeKills,
+    #[serde(rename = "ability_kills")]
+    AbilityKills,
+    #[serde(rename = "headshot_kills")]
+    HeadshotKills,
+    #[serde(rename = "gold_player")]
+    GoldPlayer,
+    #[serde(rename = "gold_player_orbs")]
+    GoldPlayerOrbs,
+    #[serde(rename = "gold_lane_creep")]
+    GoldLaneCreep,
+    #[serde(rename = "gold_lane_creep_orbs")]
+    GoldLaneCreepOrbs,
+    #[serde(rename = "gold_neutral_creep")]
+    GoldNeutralCreep,
+    #[serde(rename = "gold_neutral_creep_orbs")]
+    GoldNeutralCreepOrbs,
+    #[serde(rename = "gold_boss")]
+    GoldBoss,
+    #[serde(rename = "gold_boss_orb")]
+    GoldBossOrb,
+    #[serde(rename = "gold_treasure")]
+    GoldTreasure,
+    #[serde(rename = "gold_denied")]
+    GoldDenied,
+    #[serde(rename = "gold_death_loss")]
+    GoldDeathLoss,
+}
+impl ::std::fmt::Display for LaneSoulCurveStatsKey {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::NetWorth => f.write_str("net_worth"),
+            Self::Kills => f.write_str("kills"),
+            Self::Deaths => f.write_str("deaths"),
+            Self::Assists => f.write_str("assists"),
+            Self::Denies => f.write_str("denies"),
+            Self::CreepKills => f.write_str("creep_kills"),
+            Self::NeutralKills => f.write_str("neutral_kills"),
+            Self::PossibleCreeps => f.write_str("possible_creeps"),
+            Self::CreepDamage => f.write_str("creep_damage"),
+            Self::NeutralDamage => f.write_str("neutral_damage"),
+            Self::BossDamage => f.write_str("boss_damage"),
+            Self::PlayerDamage => f.write_str("player_damage"),
+            Self::PlayerDamageTaken => f.write_str("player_damage_taken"),
+            Self::PlayerHealing => f.write_str("player_healing"),
+            Self::SelfHealing => f.write_str("self_healing"),
+            Self::SelfDamage => f.write_str("self_damage"),
+            Self::TeammateHealing => f.write_str("teammate_healing"),
+            Self::TeammateBarriering => f.write_str("teammate_barriering"),
+            Self::PlayerBarriering => f.write_str("player_barriering"),
+            Self::DamageMitigated => f.write_str("damage_mitigated"),
+            Self::DamageAbsorbed => f.write_str("damage_absorbed"),
+            Self::AbsorptionProvided => f.write_str("absorption_provided"),
+            Self::HealPrevented => f.write_str("heal_prevented"),
+            Self::HealLost => f.write_str("heal_lost"),
+            Self::Level => f.write_str("level"),
+            Self::AbilityPoints => f.write_str("ability_points"),
+            Self::MaxHealth => f.write_str("max_health"),
+            Self::WeaponPower => f.write_str("weapon_power"),
+            Self::TechPower => f.write_str("tech_power"),
+            Self::ShotsHit => f.write_str("shots_hit"),
+            Self::ShotsMissed => f.write_str("shots_missed"),
+            Self::HeroBulletsHit => f.write_str("hero_bullets_hit"),
+            Self::HeroBulletsHitCrit => f.write_str("hero_bullets_hit_crit"),
+            Self::BulletKills => f.write_str("bullet_kills"),
+            Self::MeleeKills => f.write_str("melee_kills"),
+            Self::AbilityKills => f.write_str("ability_kills"),
+            Self::HeadshotKills => f.write_str("headshot_kills"),
+            Self::GoldPlayer => f.write_str("gold_player"),
+            Self::GoldPlayerOrbs => f.write_str("gold_player_orbs"),
+            Self::GoldLaneCreep => f.write_str("gold_lane_creep"),
+            Self::GoldLaneCreepOrbs => f.write_str("gold_lane_creep_orbs"),
+            Self::GoldNeutralCreep => f.write_str("gold_neutral_creep"),
+            Self::GoldNeutralCreepOrbs => f.write_str("gold_neutral_creep_orbs"),
+            Self::GoldBoss => f.write_str("gold_boss"),
+            Self::GoldBossOrb => f.write_str("gold_boss_orb"),
+            Self::GoldTreasure => f.write_str("gold_treasure"),
+            Self::GoldDenied => f.write_str("gold_denied"),
+            Self::GoldDeathLoss => f.write_str("gold_death_loss"),
+        }
+    }
+}
+impl ::std::str::FromStr for LaneSoulCurveStatsKey {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "net_worth" => Ok(Self::NetWorth),
+            "kills" => Ok(Self::Kills),
+            "deaths" => Ok(Self::Deaths),
+            "assists" => Ok(Self::Assists),
+            "denies" => Ok(Self::Denies),
+            "creep_kills" => Ok(Self::CreepKills),
+            "neutral_kills" => Ok(Self::NeutralKills),
+            "possible_creeps" => Ok(Self::PossibleCreeps),
+            "creep_damage" => Ok(Self::CreepDamage),
+            "neutral_damage" => Ok(Self::NeutralDamage),
+            "boss_damage" => Ok(Self::BossDamage),
+            "player_damage" => Ok(Self::PlayerDamage),
+            "player_damage_taken" => Ok(Self::PlayerDamageTaken),
+            "player_healing" => Ok(Self::PlayerHealing),
+            "self_healing" => Ok(Self::SelfHealing),
+            "self_damage" => Ok(Self::SelfDamage),
+            "teammate_healing" => Ok(Self::TeammateHealing),
+            "teammate_barriering" => Ok(Self::TeammateBarriering),
+            "player_barriering" => Ok(Self::PlayerBarriering),
+            "damage_mitigated" => Ok(Self::DamageMitigated),
+            "damage_absorbed" => Ok(Self::DamageAbsorbed),
+            "absorption_provided" => Ok(Self::AbsorptionProvided),
+            "heal_prevented" => Ok(Self::HealPrevented),
+            "heal_lost" => Ok(Self::HealLost),
+            "level" => Ok(Self::Level),
+            "ability_points" => Ok(Self::AbilityPoints),
+            "max_health" => Ok(Self::MaxHealth),
+            "weapon_power" => Ok(Self::WeaponPower),
+            "tech_power" => Ok(Self::TechPower),
+            "shots_hit" => Ok(Self::ShotsHit),
+            "shots_missed" => Ok(Self::ShotsMissed),
+            "hero_bullets_hit" => Ok(Self::HeroBulletsHit),
+            "hero_bullets_hit_crit" => Ok(Self::HeroBulletsHitCrit),
+            "bullet_kills" => Ok(Self::BulletKills),
+            "melee_kills" => Ok(Self::MeleeKills),
+            "ability_kills" => Ok(Self::AbilityKills),
+            "headshot_kills" => Ok(Self::HeadshotKills),
+            "gold_player" => Ok(Self::GoldPlayer),
+            "gold_player_orbs" => Ok(Self::GoldPlayerOrbs),
+            "gold_lane_creep" => Ok(Self::GoldLaneCreep),
+            "gold_lane_creep_orbs" => Ok(Self::GoldLaneCreepOrbs),
+            "gold_neutral_creep" => Ok(Self::GoldNeutralCreep),
+            "gold_neutral_creep_orbs" => Ok(Self::GoldNeutralCreepOrbs),
+            "gold_boss" => Ok(Self::GoldBoss),
+            "gold_boss_orb" => Ok(Self::GoldBossOrb),
+            "gold_treasure" => Ok(Self::GoldTreasure),
+            "gold_denied" => Ok(Self::GoldDenied),
+            "gold_death_loss" => Ok(Self::GoldDeathLoss),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for LaneSoulCurveStatsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for LaneSoulCurveStatsKey {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///One requested stat's curve. All four arrays line up with `sample_times_s`.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct LaneStatCurve {
+    ///Mean of the duo's combined value minus the enemy duo's. Negative means behind.
+    pub diff: ::std::vec::Vec<f64>,
+    ///Population standard deviation of `diff` across the counted matchups.
+    pub diff_std: ::std::vec::Vec<f64>,
+    ///Mean of the duo's combined value, summed over its two players.
+    pub value: ::std::vec::Vec<f64>,
+    ///Population standard deviation of `value` across the counted matchups.
+    pub value_std: ::std::vec::Vec<f64>,
+}
 ///`LastRankedMatch`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LastRankedMatch {
