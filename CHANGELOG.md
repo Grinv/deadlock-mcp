@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `item_timings`: which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30 and
+  30+ minutes), by the API's win rate adjusted for the buyer's net worth at purchase, next to the
+  raw one, each phase's win rate and how many matches reached it. `hero_items` says its win rates
+  are raw and favour items bought by players already ahead.
 - `lane_matchups`: how a lane duo does against an enemy duo, or against any duo: the average soul
   lead with its spread and the damage lead at each stats snapshot, and the win rate. Built on the
   API's lane soul curve and lane matchup stats, which the API marks as subject to change.
@@ -34,7 +38,8 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - An error page from the gateway in front of the API (Cloudflare) comes back as its title, e.g.
-  "504: Gateway time-out", instead of its HTML.
+  "504: Gateway time-out", instead of its HTML, and a 504 says to narrow the query rather than being retried:
+  the API answers the same query with the same 504 for minutes.
 - Seven heroes lost an ability whose tooltip has no text of its own, among them Solomon's Develop
   Queen and Graves' Borrowed Decree; a hero's abilities are now its signature and ultimate ones.
 - `player_overview` gives `rank: null` when the API holds no ranked match of the player, instead of

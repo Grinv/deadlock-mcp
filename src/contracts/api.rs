@@ -2238,6 +2238,91 @@ pub struct ItemDraftRoundPerGameRound {
     pub chance_rare: OutcomeToWeights,
     pub item_draft_rounds: ::std::vec::Vec<ItemDraftRound>,
 }
+/**A transition between an item in one column and an item in the next column,
+counted across players who purchased both.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemFlowEdge {
+    ///The column of the source item.
+    pub from_column: i32,
+    pub from_item_id: i64,
+    pub losses: i64,
+    pub matches: i64,
+    pub to_item_id: i64,
+    pub wins: i64,
+}
+/**The locked build path without one of its locked items: how the population changes when that
+item's constraint is dropped and every other one kept.*/
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemFlowLeaveOneOut {
+    ///Its locked stage column.
+    pub column: i64,
+    ///The locked item left out. See more: <https://api.deadlock-api.com/v1/assets/items>
+    pub item_id: i64,
+    pub matches: i64,
+    pub wins: i64,
+}
+///A single item, aggregated within one column of the flow graph.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemFlowNode {
+    /**Win rate standardized to the stage's net-worth-at-buy distribution, removing the
+    "richer buyers win more" confound. See the endpoint description.*/
+    pub adjusted_win_rate: f64,
+    ///Average net worth of buyers at the moment they bought this item (confound visibility).
+    pub avg_net_worth_at_buy: f64,
+    ///The phase column (0-based) the item was bought in.
+    pub column: i32,
+    ///See more: <https://api.deadlock-api.com/v1/assets/items>
+    pub item_id: i64,
+    pub losses: i64,
+    pub matches: i64,
+    pub players: i64,
+    pub total_assists: i64,
+    pub total_deaths: i64,
+    pub total_kills: i64,
+    pub wins: i64,
+}
+///`ItemFlowStats`
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemFlowStats {
+    ///Totals ignoring the locked build path (item filters only). Denominator for chained pick rate.
+    pub baseline: ItemFlowSummary,
+    pub edges: ::std::vec::Vec<ItemFlowEdge>,
+    /**One entry per locked item, in request order: the totals of the locked build path without that
+    item. `summary` against an entry is what that one item adds to the build. Empty without locks.*/
+    pub leave_one_out: ::std::vec::Vec<ItemFlowLeaveOneOut>,
+    pub nodes: ::std::vec::Vec<ItemFlowNode>,
+    /**Distinct baseline games that bought any upgrade in each stage column (index = column).
+    `reached / baseline.matches` shows how survivorship-selected a (late) stage is.*/
+    pub reached_per_column: ::std::vec::Vec<i64>,
+    /**Of `reached_per_column`, the games that were won (index = column). `reached_wins / reached`
+    is the win rate of games that got that far, the fair baseline for a build ending there.*/
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub reached_wins_per_column: ::std::vec::Vec<i64>,
+    ///Totals for the locked build-path population (all filters applied). Denominator for pick rate.
+    pub summary: ItemFlowSummary,
+    /**`reached_per_column` for the locked build path's games (`summary`). Late stages hold long
+    games only, so an item bought there is compared with the build's games that got that far.*/
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub summary_reached_per_column: ::std::vec::Vec<i64>,
+    ///Of `summary_reached_per_column`, the games that were won (index = column).
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub summary_reached_wins_per_column: ::std::vec::Vec<i64>,
+}
+///Population-level totals for the (optionally locked) build path.
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+pub struct ItemFlowSummary {
+    ///Average match duration (seconds) of the population.
+    pub avg_duration_s: f64,
+    ///Average final net worth of the population.
+    pub avg_net_worth: f64,
+    pub losses: i64,
+    pub matches: i64,
+    pub players: i64,
+    pub total_assists: i64,
+    pub total_deaths: i64,
+    pub total_kills: i64,
+    pub wins: i64,
+}
 ///`ItemGroup`
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ItemGroup {

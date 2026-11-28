@@ -1,6 +1,6 @@
 //! The meta from the Deadlock API's analytics over all players' matches: `hero_stats`,
-//! `hero_items`, `hero_counters`, `hero_synergies`, `ability_order`, `lane_matchups`; plus
-//! `builds` and `leaderboard`.
+//! `hero_items`, `item_timings`, `hero_counters`, `hero_synergies`, `ability_order`,
+//! `lane_matchups`; plus `builds` and `leaderboard`.
 
 use std::cmp::Reverse;
 use std::fmt::Write as _;
@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::contracts::api::{
     AnalyticsAbilityOrderStats, AnalyticsHeroStats, HeroCounterStats, HeroSynergyStats,
-    ItemSlotType, ItemStats, LaneMatchupStats, LaneSoulCurve, LaneSoulCurveStatsKey, MetricValues,
-    PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric, Region,
+    ItemFlowStats, ItemSlotType, ItemStats, LaneMatchupStats, LaneSoulCurve, LaneSoulCurveStatsKey,
+    MetricValues, PlayerPerformanceCurvePoint, PlayerStatsMetricsKey as Metric, Region,
 };
 use crate::contracts::valve::c_msg_match_meta_data_contents::EGoldSource as G;
 use crate::domain::assets::{Catalog, catalog};
@@ -224,6 +224,127 @@ fn hero_items_from(
                 avg_buy_time: mmss(r.avg_buy_time_s.max(0.0) as u64),
             })
             .collect(),
+        sources,
+    }
+}
+
+/// The phases the API groups the purchases of a normal match into, by its column.
+const PHASES: [&str; 4] = ["0:00-9:00", "9:00-20:00", "20:00-30:00", "30:00+"];
+
+#[derive(Serialize, JsonSchema)]
+pub struct TimedItem {
+    pub item: String,
+    /// Matches in which a player of the hero bought it in this phase.
+    pub matches: i64,
+    /// Raw: wins over `matches`, 0..1. Favours items that players already ahead buy, since they
+    /// have the souls for them.
+    pub win_rate: Option<f64>,
+    /// The win rate with the buyers' lead taken out: re-weighted to the phase's spread of net
+    /// worth at purchase, 0..1. Read this one against the phase's `win_rate`; a raw `win_rate`
+    /// well above it means the item is bought mostly by players already ahead. Still observed,
+    /// not a controlled test.
+    pub adjusted_win_rate: f64,
+    /// The buyers' average net worth (souls) when they bought it: high next to the phase's other
+    /// items means it is bought by players ahead, or late in the phase.
+    pub avg_net_worth_at_buy: f64,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct ItemPhase {
+    /// The game time the items were bought in, `m:ss-m:ss`.
+    pub phase: String,
+    /// Matches in which a player of the hero bought any shop item in this phase. Late phases
+    /// hold only the matches that lasted that long.
+    pub matches: i64,
+    /// Wins over `matches`, 0..1: the baseline for the items' win rates in this phase.
+    pub win_rate: Option<f64>,
+    /// Shop items bought in this phase, highest `adjusted_win_rate` first.
+    pub items: Vec<TimedItem>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct ItemTimings {
+    pub hero: String,
+    pub phases: Vec<ItemPhase>,
+    pub sources: Vec<Source>,
+}
+
+pub fn item_timings(
+    hero: &str,
+    filters: &MetaFilters,
+    min_matches: u32,
+    limit: u32,
+) -> Result<ItemTimings> {
+    let cat = catalog()?;
+    let filters = filters.to_filters(&cat)?;
+    let hero_id = cat.find_hero(hero)?;
+    let (flow, source) = api::item_flow_stats(&format!(
+        "&hero_ids={hero_id}&min_matches={min_matches}{}",
+        filters.query()
+    ))?;
+    let sources = answer_sources([source], &cat);
+    Ok(item_timings_from(
+        &cat,
+        hero_id,
+        min_matches,
+        limit,
+        &flow,
+        sources,
+    ))
+}
+
+fn item_timings_from(
+    cat: &Catalog,
+    hero_id: u32,
+    min_matches: u32,
+    limit: u32,
+    flow: &ItemFlowStats,
+    sources: Vec<Source>,
+) -> ItemTimings {
+    let phases = flow
+        .reached_per_column
+        .iter()
+        .enumerate()
+        .map(|(column, &reached)| {
+            let mut items: Vec<_> = flow
+                .nodes
+                .iter()
+                .filter(|n| {
+                    usize::try_from(n.column) == Ok(column) && n.matches >= i64::from(min_matches)
+                })
+                .filter_map(|n| {
+                    let item = match cat.item(id32(n.item_id)) {
+                        Some(i) if i.kind != ItemKind::Upgrade => return None,
+                        Some(i) => i.name.clone(),
+                        None => format!("item {}", n.item_id),
+                    };
+                    Some(TimedItem {
+                        item,
+                        matches: n.matches,
+                        win_rate: win_rate(n.wins, n.matches),
+                        adjusted_win_rate: round(n.adjusted_win_rate, 3),
+                        avg_net_worth_at_buy: round(n.avg_net_worth_at_buy, 0),
+                    })
+                })
+                .collect();
+            items.sort_by(|a, b| b.adjusted_win_rate.total_cmp(&a.adjusted_win_rate));
+            items.truncate(take(limit));
+            ItemPhase {
+                phase: PHASES
+                    .get(column)
+                    .map_or_else(|| format!("phase {column}"), |&p| p.to_owned()),
+                matches: reached,
+                win_rate: flow
+                    .reached_wins_per_column
+                    .get(column)
+                    .and_then(|&wins| win_rate(wins, reached)),
+                items,
+            }
+        })
+        .collect();
+    ItemTimings {
+        hero: cat.hero(hero_id),
+        phases,
         sources,
     }
 }
@@ -1146,6 +1267,80 @@ mod tests {
                 ],
                 "sources": [],
             })
+        );
+    }
+
+    #[test]
+    fn item_timings_by_phase_and_adjusted_win_rate() {
+        let flow: ItemFlowStats = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/item_flow_stats.json"
+        ))
+        .unwrap();
+        let up = |id, name| Item::test(id, name, ItemKind::Upgrade);
+        // Ethereal Shift (2533252781) is left out of the catalog; Metal Skin is not a shop item here.
+        let cat = Catalog::test(&[(11, "Dynamo")]).with_items(vec![
+            up(3_776_945_997, "Extra Charge"),
+            up(2_108_215_830, "Heroic Aura"),
+            up(677_738_769, "Refresher"),
+            up(1_282_141_666, "Siphon Bullets"),
+            up(3_812_615_317, "Arctic Blast"),
+            up(710_436_191, "Capacitor"),
+            Item::test(1_378_931_225, "Metal Skin", ItemKind::Ability),
+            up(2_820_116_164, "Diviner's Kevlar"),
+            up(2_800_629_741, "Magic Carpet"),
+            up(3_361_075_077, "Return Fire"),
+        ]);
+        // Capacitor has fewer than 50 matches; each phase is cut to 2 items.
+        let timings = item_timings_from(&cat, 11, 50, 2, &flow, Vec::new());
+        assert_eq!(
+            serde_json::to_value(&timings).unwrap(),
+            serde_json::json!({
+                "hero": "Dynamo",
+                "phases": [
+                    {"phase": "0:00-9:00", "matches": 1_682_175, "win_rate": 0.515, "items": [
+                        {"item": "Refresher", "matches": 78, "win_rate": 0.667,
+                         "adjusted_win_rate": 0.648, "avg_net_worth_at_buy": 4362.0},
+                        {"item": "Heroic Aura", "matches": 1451, "win_rate": 0.613,
+                         "adjusted_win_rate": 0.598, "avg_net_worth_at_buy": 4130.0},
+                    ]},
+                    // Siphon Bullets wins more raw, Arctic Blast more once net worth is weighed.
+                    {"phase": "9:00-20:00", "matches": 1_677_813, "win_rate": 0.515, "items": [
+                        {"item": "Arctic Blast", "matches": 56, "win_rate": 0.643,
+                         "adjusted_win_rate": 0.598, "avg_net_worth_at_buy": 11965.0},
+                        {"item": "Siphon Bullets", "matches": 425, "win_rate": 0.68,
+                         "adjusted_win_rate": 0.583, "avg_net_worth_at_buy": 14304.0},
+                    ]},
+                    {"phase": "20:00-30:00", "matches": 1_626_292, "win_rate": 0.514, "items": [
+                        {"item": "item 2533252781", "matches": 168, "win_rate": 0.601,
+                         "adjusted_win_rate": 0.6, "avg_net_worth_at_buy": 22608.0},
+                        {"item": "Siphon Bullets", "matches": 7598, "win_rate": 0.62,
+                         "adjusted_win_rate": 0.587, "avg_net_worth_at_buy": 23101.0},
+                    ]},
+                    {"phase": "30:00+", "matches": 1_227_520, "win_rate": 0.505, "items": [
+                        {"item": "Magic Carpet", "matches": 11450, "win_rate": 0.623,
+                         "adjusted_win_rate": 0.608, "avg_net_worth_at_buy": 43171.0},
+                        {"item": "Diviner's Kevlar", "matches": 107_002, "win_rate": 0.567,
+                         "adjusted_win_rate": 0.556, "avg_net_worth_at_buy": 41358.0},
+                    ]},
+                ],
+                "sources": [],
+            })
+        );
+        let names = |t: &ItemTimings, phase: usize| -> Vec<String> {
+            t.phases[phase]
+                .items
+                .iter()
+                .map(|i| i.item.clone())
+                .collect()
+        };
+        // At 100 matches Refresher, Arctic Blast and Capacitor drop out.
+        let timings = item_timings_from(&cat, 11, 100, 10, &flow, Vec::new());
+        assert_eq!(names(&timings, 0), ["Heroic Aura", "Extra Charge"]);
+        assert_eq!(names(&timings, 1), ["Siphon Bullets"]);
+        assert_eq!(names(&timings, 2), ["item 2533252781", "Siphon Bullets"]);
+        assert_eq!(
+            names(&timings, 3),
+            ["Magic Carpet", "Diviner's Kevlar", "Return Fire"]
         );
     }
 

@@ -36,10 +36,11 @@ leaver's match is a loss even if their team won.
 with nothing cached, so what it gives (Steam names, place names, awards) is missing, not empty.
 - A player's own stats: player_heroes, player_mates, player_enemies, player_deaths_map. The API has only the matches \
 someone sent it; ingest_status says whether the player sends theirs, and if not, totals can be low.
-- The meta over all players: hero_stats, hero_items, hero_counters, hero_synergies, lane_matchups (a lane duo against \
-another), ability_order, builds, leaderboard; performance_curve and stat_percentiles place one match against the \
-average. Filter them to the player's rank (min_rank/max_rank), say how many matches a rate rests on (small samples \
-mislead), and check patches for a balance change since.
+- The meta over all players: hero_stats, hero_items, item_timings (items by match phase, adjusted for the buyer's \
+lead), hero_counters, hero_synergies, lane_matchups (a lane duo against another), ability_order, builds, leaderboard; \
+performance_curve and stat_percentiles place one match against the average. Filter them to the player's rank \
+(min_rank/max_rank), say how many matches a rate rests on (small samples mislead), and check patches for a balance \
+change since.
 - game_lookup gives hero, ability and item names and tooltips; wiki_search and wiki_page the mechanics (cite the page \
 URL; the text is CC BY-NC-SA 4.0). A hero's story is on the wiki page \"<Hero>/Lore\".
 - Resources: hero cards at deadlock://hero/<hero id>, match summaries at deadlock://match/<match id>.";
@@ -65,8 +66,8 @@ minute, damage dealt and taken per minute, last hits, assists).
 to the lane partner. Read each pairing against average_win_rate and give its place with the direction (\"8th hardest \
 of 43\"), not a bare number.
 6. Deaths: who killed them, where and when (match_player); player_deaths_map with their hero if dying looks like a \
-habit. Items: what they bought when, next to what the enemies built and hero_items against this match's enemy heroes \
-(enemy_heroes).
+habit. Items: what they bought when, against item_timings for the hero at their rank (its adjusted win rates), \
+next to what the enemies built and hero_items against this match's enemy heroes (enemy_heroes).
 7. Before stating a conclusion, check it against a second figure that could contradict it: read assists against \
 kill_participation, and take much damage taken as a sign they were in the fights. Keep data and inference apart and \
 give the match counts behind rates. Don't call a choice a mistake until you know where it came from: ask whether \
@@ -362,6 +363,7 @@ mod tests {
                         "performance_",
                         "stat_",
                         "lane_",
+                        "item_",
                     ]
                     .iter()
                     .any(|p| w.starts_with(p) && w.len() > p.len())

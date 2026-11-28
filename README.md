@@ -23,7 +23,7 @@ Each tool answers one question; the assistant combines them.
 |---|---|
 | Players | `player_search` (account id from a Steam name, SteamID64 or profile link), `player_overview`, `player_heroes`, `player_mates`, `player_enemies`, `player_deaths_map`, `ingest_status` |
 | Matches | `match_summary` (with the objectives destroyed), `match_player` (souls by source, unspent souls, deaths with killers and the nearest objective, purchases, ability upgrades, award stats such as crates broken and damage by type), `match_lanes`, `match_damage` (damage both ways between a player and each hero and the non-heroes, by ability, weapon and item, with killing damage and seconds of crowd control), `match_distance` (how long a player stood within 10 to 60 m of each hero) |
-| Meta | `hero_stats`, `hero_items`, `hero_counters`, `hero_synergies`, `lane_matchups` (a lane duo against another: soul lead at each snapshot with its spread, win rate), `ability_order`, `performance_curve` (the average net worth, K/D/A and souls by source over a match), `stat_percentiles` (where a match's stats rank), `builds`, `leaderboard`, `patches` |
+| Meta | `hero_stats`, `hero_items`, `item_timings` (items by match phase, win rate adjusted for the buyer's net worth), `hero_counters`, `hero_synergies`, `lane_matchups` (a lane duo against another: soul lead at each snapshot with its spread, win rate), `ability_order`, `performance_curve` (the average net worth, K/D/A and souls by source over a match), `stat_percentiles` (where a match's stats rank), `builds`, `leaderboard`, `patches` |
 | Game | `game_lookup` (heroes, abilities and items with their tooltips), `wiki_search`, `wiki_page` |
 
 Meta tools take a rank range by name (`min_rank`, `max_rank`, e.g. "Ascendant" or "Eternus III")

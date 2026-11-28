@@ -81,7 +81,7 @@
       "name": "hero_counters"
     },
     {
-      "description": "Which shop items win on a hero, optionally against given enemy heroes.",
+      "description": "Which shop items win on a hero, optionally against given enemy heroes. The win rates are\nraw and favour items bought by players already ahead; `item_timings` adjusts for that.",
       "name": "hero_items"
     },
     {
@@ -95,6 +95,10 @@
     {
       "description": "Whether the player runs the API's ingest tool, which sends their matches as they play.",
       "name": "ingest_status"
+    },
+    {
+      "description": "Which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30, 30+ minutes),\nby win rate adjusted for the buyer's net worth at purchase, next to the raw one.",
+      "name": "item_timings"
     },
     {
       "description": "A lane duo against an enemy duo (or any duo): soul lead with its spread and damage lead at\neach stats snapshot, and the win rate. Upstream marks the data as subject to change.",

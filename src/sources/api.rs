@@ -212,6 +212,16 @@ pub fn performance_curve(filters: &str) -> Result<(Vec<api::PlayerPerformanceCur
     )
 }
 
+/// Items by the phase of the match they were bought in (0-9, 9-20, 20-30 and 30+ minutes), with
+/// the win rate adjusted for the buyers' net worth, and the games that reached each phase. The
+/// answer also carries the transitions between items, which nothing here reads.
+pub fn item_flow_stats(filters: &str) -> Result<(api::ItemFlowStats, Source)> {
+    get_json(
+        &format!("{API}/v1/analytics/item-flow-stats?game_mode=normal{filters}"),
+        ANALYTICS,
+    )
+}
+
 /// How a lane duo's soul and hero damage lead over the duo it laned against develops, at each
 /// stats snapshot. `filters` picks the duos and `group_by`.
 pub fn lane_soul_curve(filters: &str) -> Result<(Vec<api::LaneSoulCurve>, Source)> {

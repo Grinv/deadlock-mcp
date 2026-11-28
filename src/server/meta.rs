@@ -99,6 +99,34 @@ pub struct HeroItemsArgs {
 
 #[derive(Deserialize, JsonSchema, garde::Validate)]
 #[serde(deny_unknown_fields)]
+pub struct ItemTimingsArgs {
+    /// The hero: a name (or a unique part of it) or a hero id.
+    #[garde(length(chars, min = 1, max = 50))]
+    pub hero: String,
+    /// Only matches whose players' average rank is at least this rank, named as `player_overview`
+    /// names it: "Ascendant" (from Ascendant I), "Eternus III"; "Obscurus" is unranked.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub min_rank: Option<String>,
+    /// Only matches whose average rank is at most this rank: "Ascendant" is up to Ascendant VI.
+    #[garde(inner(length(chars, min = 1, max = 30)))]
+    pub max_rank: Option<String>,
+    /// Only matches of the last this many days.
+    #[serde(default = "default_window_days")]
+    #[garde(range(min = 1, max = 365))]
+    pub days: u32,
+    /// Leave out items bought in a phase in fewer matches. A rarely bought item's rate is noisy:
+    /// raise this for a steadier list, and say how many matches a rate rests on.
+    #[serde(default = "default_hundred")]
+    #[garde(range(min = 1))]
+    pub min_matches: u32,
+    /// How many items to list per phase.
+    #[serde(default = "default_ten")]
+    #[garde(range(min = 1, max = 50))]
+    pub limit: u32,
+}
+
+#[derive(Deserialize, JsonSchema, garde::Validate)]
+#[serde(deny_unknown_fields)]
 pub struct HeroPairArgs {
     /// The hero: a name (or a unique part of it) or a hero id.
     #[garde(length(chars, min = 1, max = 50))]
@@ -299,7 +327,8 @@ impl DeadlockServer {
         run(move || meta::hero_stats(&f, a.min_matches, a.sort, a.limit)).await
     }
 
-    /// Which shop items win on a hero, optionally against given enemy heroes.
+    /// Which shop items win on a hero, optionally against given enemy heroes. The win rates are
+    /// raw and favour items bought by players already ahead; `item_timings` adjusts for that.
     #[tool(
         title = "Items on a hero",
         input_schema = input_schema::<HeroItemsArgs>(),
@@ -312,6 +341,22 @@ impl DeadlockServer {
         let a: HeroItemsArgs = parse(raw)?;
         let f = filters(a.min_rank, a.max_rank, a.days);
         run(move || meta::hero_items(&a.hero, &a.enemy_heroes, &f, a.min_matches, a.limit)).await
+    }
+
+    /// Which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30, 30+ minutes),
+    /// by win rate adjusted for the buyer's net worth at purchase, next to the raw one.
+    #[tool(
+        title = "Item timings on a hero",
+        input_schema = input_schema::<ItemTimingsArgs>(),
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
+    async fn item_timings(
+        &self,
+        Parameters(raw): Parameters<rmcp::model::JsonObject>,
+    ) -> Result<Json<meta::ItemTimings>, CallToolResult> {
+        let a: ItemTimingsArgs = parse(raw)?;
+        let f = filters(a.min_rank, a.max_rank, a.days);
+        run(move || meta::item_timings(&a.hero, &f, a.min_matches, a.limit)).await
     }
 
     /// The enemy heroes a hero wins most and least against.

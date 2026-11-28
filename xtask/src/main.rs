@@ -32,6 +32,7 @@ const API_SCHEMAS: &[&str] = &[
     "HeroSynergyStats",
     "IngestStatusResponse",
     "Item",
+    "ItemFlowStats",
     "ItemStats",
     "KillDeathStats",
     "LaneMatchupStats",

@@ -103,6 +103,11 @@ mod tests {
             "../../contracts/fixtures/lane_matchup_stats.json"
         ));
         assert_eq!(lane[0].hero_ids, [11, 76]);
+        let flow: api::ItemFlowStats = parse(include_str!(
+            "../../contracts/fixtures/item_flow_stats.json"
+        ));
+        assert_eq!(flow.reached_per_column.len(), 4);
+        assert!(flow.nodes.iter().any(|n| n.column == 3));
         let metrics: api::PlayerStatsMetrics =
             parse(include_str!("../../contracts/fixtures/stat_metrics.json"));
         assert!(metrics.contains_key(&api::PlayerStatsMetricsKey::NetWorthPerMin));
