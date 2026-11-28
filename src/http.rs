@@ -287,6 +287,18 @@ fn failure(url: &str, status: u16, retry_after: Option<u64>, body: &[u8]) -> Att
             problem: problem(Kind::NotFound, detail),
             retry_in: None,
         },
+        // The gateway gave up on a slow query, and it answers the same query with the same 504
+        // for minutes, so a retry doesn't help; a lighter query does.
+        504 => Attempt::Failed {
+            problem: problem(
+                Kind::Upstream,
+                format!(
+                    "{detail}. The query took longer than the gateway allows, and the same query \
+                     fails again for a few minutes; narrow it (a rank range, fewer days)"
+                ),
+            ),
+            retry_in: None,
+        },
         500..=599 => Attempt::Failed {
             problem: problem(Kind::Upstream, detail),
             retry_in: Some(Duration::from_secs(1)),
@@ -553,6 +565,11 @@ mod tests {
         assert_eq!(
             (kind, retry),
             (Kind::Upstream, Some(Duration::from_secs(1)))
+        );
+        let (kind, message, _, _, _, retry) = failed(failure(url, 504, None, body));
+        assert_eq!(
+            (kind, message.contains("narrow it"), retry),
+            (Kind::Upstream, true, None)
         );
         let (kind, _, _, _, _, retry) = failed(failure(url, 400, None, body));
         assert_eq!((kind, retry), (Kind::Upstream, None));
