@@ -6,51 +6,51 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-28
+
 ### Added
 
-- `builds` lists each build's items in the author's groups, and the matches and win rate of the
-  last 30 days with the build selected when the game started (the API's demo analysis); it takes
-  `build_id` for one build. `match_player` gives the player's selected build (`hero_build_id`).
-- `hero_stats` takes `min_hero_matches` and `max_hero_matches`: only players with that many
-  matches on their hero over their whole history, e.g. up to 5 for players new to a hero.
-- `match_summary` lists the Midboss kills, in order: which team killed it, which claimed the
-  Rejuvenator, and when.
-- `item_timings`: which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30 and
-  30+ minutes), by the API's win rate adjusted for the buyer's net worth at purchase, next to the
-  raw one, each phase's win rate and how many matches reached it. `hero_items` says its win rates
-  are raw and favour items bought by players already ahead.
-- `lane_matchups`: how a lane duo does against an enemy duo, or against any duo: the average soul
-  lead with its spread and the damage lead at each stats snapshot, and the win rate. Built on the
-  API's lane soul curve and lane matchup stats, which the API marks as subject to change.
 - `match_damage`: who damaged a player and whom they damaged, by ability, weapon and item, who
   finished them (killing damage) and the seconds of crowd control they took, up to a minute or the
-  match end; the non-heroes (troopers, objectives, the Midboss, summons) are reported apart.
+  match end. The non-heroes (troopers, objectives, the Midboss, summons) are reported apart.
 - `match_distance`: how many seconds a player stood within 10, 20, 30, 45 and 60 m of each other
   hero in a window of the match.
-- `match_summary` lists the objectives destroyed, in order; `match_player` the ability upgrades, in
-  order.
+- `lane_matchups`: how a lane duo does against an enemy duo or against any duo: the average soul
+  lead with its spread and the damage lead at each stats snapshot, and the win rate. The API marks
+  the data behind it as subject to change.
+- `item_timings`: which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30 and
+  30+ minutes), with the win rate adjusted for the buyer's net worth at purchase next to the raw
+  one, and each phase's win rate and matches.
+- `match_summary` lists the objectives destroyed and the Midboss kills (who killed it, who claimed
+  the Rejuvenator, and when), and says whether the game matched the lobby in its new player or low
+  priority pool.
+- `match_player` gives the player's ability upgrades in order, their kill participation, and the
+  build they had selected when the match started, when the API has analysed the match's replay.
+- `builds` gives each build's matches and win rate over the last 30 days; with `build_id` it gives
+  one build and its items in the author's groups.
 - `hero_counters` and `hero_synergies` take `heroes`: each named hero's win rate, matches and place
-  among all pairs with its direction (`hardest_place`, `best_place`), next to the hero's average
-  win rate.
-- `match_player` gives the player's kill participation; `match_summary` says whether the game
-  matched the lobby in its new player or low priority pool.
+  among all pairs with its direction (`hardest_place`, `best_place`), next to the hero's average.
+- `hero_stats` takes `min_hero_matches` and `max_hero_matches` to count only players with that many
+  matches on the hero, e.g. up to 5 for players new to it.
 
 ### Changed
 
-- `contracts/openapi.json` carries the Deadlock API's MIT license in `contracts/openapi.LICENSE`.
-- The server instructions are shorter: a map of the tools and the rules that span them.
-- The `review_match` prompt starts from the whole match, compares the lane with both opponents and
-  the partner, and checks each conclusion against a second figure.
+- `hero_items` now warns that its win rates are raw and favour items bought by players already
+  ahead; `item_timings` adjusts for that.
+- The `review_match` prompt starts from the whole match, compares the lane with both opponents, the
+  partner and the usual result of that matchup, and checks each conclusion against a second figure.
+- The built-in server instructions are shorter.
+- The repository's copy of the Deadlock API's OpenAPI document now carries the API's MIT license.
 
 ### Fixed
 
-- An error page from the gateway in front of the API (Cloudflare) comes back as its title, e.g.
-  "504: Gateway time-out", instead of its HTML, and a 504 says to narrow the query rather than being retried:
-  the API answers the same query with the same 504 for minutes.
-- Seven heroes lost an ability whose tooltip has no text of its own, among them Solomon's Develop
-  Queen and Graves' Borrowed Decree; a hero's abilities are now its signature and ultimate ones.
-- `player_overview` gives `rank: null` when the API holds no ranked match of the player, instead of
-  "Obscurus", which read as unranked.
+- Seven heroes were missing an ability, among them Solomon's Develop Queen and Graves' Borrowed
+  Decree. All their abilities are listed now.
+- `player_overview` gives `rank: null` when the Deadlock API knows no ranked match of the player.
+  It said "Obscurus" (unranked) before, though the rank is only unknown.
+- An error page from the gateway in front of the API comes back as its title, e.g. "504: Gateway
+  time-out", instead of its HTML. A 504 is no longer retried: the API can answer the same query
+  with the same 504 for minutes, so the error says to narrow the query instead.
 
 ## [0.1.0] - 2026-11-27
 
