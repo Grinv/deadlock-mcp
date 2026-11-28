@@ -52,7 +52,16 @@ fn load_with_builds(match_id: u64) -> Result<(MatchInfo, HashMap<u32, i64>, Sour
         )
         .with_instance(source.url.clone())
     })?;
-    Ok((info, meta.hero_build_ids, source))
+    Ok((info, selected_builds(meta.hero_build_ids), source))
+}
+
+/// Each player's selected build; a null map or a null build reads as no build, so its shape can't
+/// break the match tools.
+fn selected_builds(ids: Option<HashMap<u32, Option<i64>>>) -> HashMap<u32, i64> {
+    ids.unwrap_or_default()
+        .into_iter()
+        .filter_map(|(account, build)| Some((account, build?)))
+        .collect()
 }
 
 fn last_stat(p: &Players) -> Option<&PlayerStats> {
@@ -132,8 +141,9 @@ pub struct DestroyedObjective {
 pub struct MidbossKill {
     /// The team that killed the Midboss.
     pub killed_by: &'static str,
-    /// The team that claimed the Rejuvenator it dropped; not `killed_by` when the other team stole it.
-    pub claimed_by: &'static str,
+    /// The team that claimed the Rejuvenator it dropped; not `killed_by` when the other team stole
+    /// it, `None` when the match doesn't say.
+    pub claimed_by: Option<&'static str>,
     pub at: String,
 }
 
@@ -222,7 +232,7 @@ fn summary_from(
         .filter_map(|m| {
             Some(MidbossKill {
                 killed_by: team_name(m.team_killed()),
-                claimed_by: team_name(m.team_claimed()),
+                claimed_by: m.team_claimed.map(|_| team_name(m.team_claimed())),
                 at: happened_at(m.destroyed_time_s())?,
             })
         })
@@ -355,7 +365,7 @@ pub struct PlayerReport {
     /// (a build changed during the match doesn't show). `None` most often means the API hasn't
     /// analysed this match's demo, not that the player had no build: then ask them which one they
     /// followed. `builds` with this `build_id` lists its items and win rate, to compare with
-    /// `purchases`.
+    /// `purchases`; an id the API's build database lacks (often a low one) gives no build there.
     pub hero_build_id: Option<i64>,
     pub purchases: Vec<Purchase>,
     /// Ability points as spent on the hero's four abilities, in time order. Compare the order with
@@ -838,7 +848,7 @@ mod tests {
         let me = player_mut(&mut info, ME);
         me.accolades[0].accolade_threshold_achieved = Some(-1);
         me.items[2].sold_time_s = Some(600);
-        let builds = metadata().hero_build_ids;
+        let builds = selected_builds(metadata().hero_build_ids);
         let r = player_from(&cat(), MATCH, ME, &info, &builds, Vec::new()).unwrap();
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(r.hero_build_id, Some(613_001));
@@ -1013,6 +1023,14 @@ mod tests {
                 {"killed_by": "The Hidden King", "claimed_by": "The Hidden King", "at": "32:31"},
             ])
         );
+        // Without `team_claimed` the claimer is unknown, not the first team.
+        info.mid_boss = vec![MidBoss {
+            team_killed: Some(1),
+            team_claimed: None,
+            destroyed_time_s: Some(1500),
+        }];
+        let s = summary_from(&cat(), MATCH, &info, &HashMap::new(), Vec::new());
+        assert_eq!(s.midboss[0].claimed_by, None);
     }
 
     #[test]
@@ -1093,6 +1111,18 @@ mod tests {
         }
         let r = player_from(&cat(), MATCH, ME, &info, &HashMap::new(), Vec::new()).unwrap();
         assert_eq!(r.kill_participation, None);
+    }
+
+    #[test]
+    fn null_builds_read_as_none() {
+        let meta = |json: &str| -> crate::sources::api::MatchMetadata {
+            serde_json::from_str(json).unwrap()
+        };
+        assert!(selected_builds(meta(r#"{"hero_build_ids": null}"#).hero_build_ids).is_empty());
+        assert!(selected_builds(meta("{}").hero_build_ids).is_empty());
+        let builds =
+            selected_builds(meta(r#"{"hero_build_ids": {"1": null, "2": 7}}"#).hero_build_ids);
+        assert_eq!(builds, HashMap::from([(2, 7)]));
     }
 
     #[test]

@@ -74,9 +74,10 @@ pub fn map(version: u32) -> Result<(api::MapData, Source)> {
 pub struct MatchMetadata {
     pub match_info: Option<valve::c_msg_match_meta_data_contents::MatchInfo>,
     /// Account id to the build the player had selected when the game started; empty without demo
-    /// analysis.
+    /// analysis. Optional throughout, so a change in a field only demo analysis fills can't fail
+    /// every match tool.
     #[serde(default)]
-    pub hero_build_ids: HashMap<u32, i64>,
+    pub hero_build_ids: Option<HashMap<u32, Option<i64>>>,
 }
 
 /// A finished match never changes.
@@ -171,12 +172,11 @@ pub fn builds(filters: &str) -> Result<(Vec<api::Build>, Source)> {
     )
 }
 
-/// Matches and wins of a hero's builds as the players had selected them when the game started,
-/// from demo analysis, over the API's default window (30 days, builds with 20 matches or more).
-/// Only builds in the API's build database; without `bucket`, one row per build.
-pub fn hero_build_stats(hero_id: u32) -> Result<(Vec<api::HeroBuildStats>, Source)> {
+/// Matches and wins of builds as the players had selected them when the game started, from demo
+/// analysis; only builds in the API's build database, and without `bucket` one row per build.
+pub fn hero_build_stats(filters: &str) -> Result<(Vec<api::HeroBuildStats>, Source)> {
     get_json(
-        &format!("{API}/v1/analytics/hero-build-stats?hero_ids={hero_id}"),
+        &format!("{API}/v1/analytics/hero-build-stats?{filters}"),
         ANALYTICS,
     )
 }
@@ -234,9 +234,9 @@ pub fn performance_curve(filters: &str) -> Result<(Vec<api::PlayerPerformanceCur
     )
 }
 
-/// Items by the phase of the match they were bought in (0-9, 9-20, 20-30 and 30+ minutes), with
-/// the win rate adjusted for the buyers' net worth, and the games that reached each phase. The
-/// answer also carries the transitions between items, which nothing here reads.
+/// Items by the phase of the match they were bought in, with the win rate adjusted for the buyers'
+/// net worth, and the games that reached each phase. The answer also carries the transitions
+/// between items, which nothing here reads.
 pub fn item_flow_stats(filters: &str) -> Result<(api::ItemFlowStats, Source)> {
     get_json(
         &format!("{API}/v1/analytics/item-flow-stats?game_mode=normal{filters}"),

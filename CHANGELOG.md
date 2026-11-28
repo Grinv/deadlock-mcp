@@ -16,8 +16,8 @@ All notable changes to this project are documented here. The format is based on
 - `match_distance`: how many seconds a player stood within 10, 20, 30, 45 and 60 m of each other
   hero in a window of the match.
 - `lane_matchups`: how a lane duo does against an enemy duo or against any duo: the average soul
-  lead with its spread and the damage lead at each stats snapshot, and the win rate. The API marks
-  the data behind it as subject to change.
+  lead with its spread and the damage lead at each stats snapshot that enough matchups lasted to,
+  and the win rate. The API marks the data behind it as subject to change.
 - `item_timings`: which shop items win on a hero in each phase of a match (0-9, 9-20, 20-30 and
   30+ minutes), with the win rate adjusted for the buyer's net worth at purchase next to the raw
   one, and each phase's win rate and matches.

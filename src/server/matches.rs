@@ -109,8 +109,9 @@ impl DeadlockServer {
         run(move || matches::lanes(args.match_id)).await
     }
 
-    /// Who damaged a player and whom they damaged, with what, and who finished them: per hero, damage
-    /// both ways by ability, weapon and item, killing damage and crowd control received.
+    /// Who damaged a player and whom they damaged, with what, and who finished them: per hero and for
+    /// the non-heroes together, damage both ways by ability, weapon and item, killing damage and
+    /// seconds of crowd control received.
     #[tool(
         title = "Damage in a match",
         input_schema = input_schema::<MatchDamageArgs>(),

@@ -294,7 +294,8 @@ fn failure(url: &str, status: u16, retry_after: Option<u64>, body: &[u8]) -> Att
                 Kind::Upstream,
                 format!(
                     "{detail}. The query took longer than the gateway allows, and the same query \
-                     fails again for a few minutes; narrow it (a rank range, fewer days)"
+                     fails again for a few minutes; for a meta tool, narrow it (a rank range, \
+                     fewer days)"
                 ),
             ),
             retry_in: None,

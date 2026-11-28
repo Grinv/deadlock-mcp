@@ -50,8 +50,8 @@ const REVIEW_STEPS: &str = "\
 they are (player_heroes: their matches on this hero; if few, hero_stats with max_hero_matches 5 shows how the hero \
 does for players new to it) and whether the match is ranked (match_summary's mode).
 2. Read the whole match first: match_summary (both teams' K/D/A, net worth and MVP, whether the game matched it in \
-the new player or low priority pool, and the Midboss: for 240 s after claiming its Rejuvenator, a team can lose a \
-fight without deaths), match_lanes (each lane's soul lead at every snapshot), then match_player for the player.
+the new player or low priority pool, and the Midboss: while a team holds its Rejuvenator, it can lose a fight without \
+deaths), match_lanes (each lane's soul lead at every snapshot), then match_player for the player.
 3. In the player's lane, call match_player for both lane opponents and the lane partner and compare souls by source \
 (lane, jungle, kills, objectives, urn), net worth over time, when each bought what, and the order of ability upgrades \
 against ability_order. Compare the lane's soul lead from match_lanes (from the player's side) with lane_matchups for \

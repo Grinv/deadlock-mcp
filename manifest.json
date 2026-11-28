@@ -109,7 +109,7 @@
       "name": "leaderboard"
     },
     {
-      "description": "Who damaged a player and whom they damaged, with what, and who finished them: per hero, damage\nboth ways by ability, weapon and item, killing damage and crowd control received.",
+      "description": "Who damaged a player and whom they damaged, with what, and who finished them: per hero and for\nthe non-heroes together, damage both ways by ability, weapon and item, killing damage and\nseconds of crowd control received.",
       "name": "match_damage"
     },
     {

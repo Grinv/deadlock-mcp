@@ -68,7 +68,8 @@ pub struct HeroRow {
 
 #[derive(Serialize, JsonSchema)]
 pub struct HeroStats {
-    /// Matches in the sample (each has 12 heroes).
+    /// Matches in the sample (each has 12 heroes); with `min_hero_matches` or `max_hero_matches`,
+    /// only those players' matches.
     pub matches: i64,
     pub heroes: Vec<HeroRow>,
     pub sources: Vec<Source>,
@@ -334,6 +335,8 @@ fn item_timings_from(
             let mut items: Vec<_> = flow
                 .nodes
                 .iter()
+                // min_matches also goes to the API, which only keeps the answer small (it carries
+                // thousands of item transitions); the rule is applied here.
                 .filter(|n| {
                     usize::try_from(n.column) == Ok(column) && n.matches >= i64::from(min_matches)
                 })
@@ -774,7 +777,19 @@ pub fn builds(
         let _ = write!(query, "&build_language={language}");
     }
     let (rows, source) = api::builds(&query)?;
-    let (stats, stats_source) = optional_part("build win rates", api::hero_build_stats(hero_id));
+    // The window and the threshold the field docs give, sent rather than left to the API's defaults.
+    let window = Filters {
+        min_badge: None,
+        max_badge: None,
+        days: Some(30),
+    };
+    let (stats, stats_source) = optional_part(
+        "build win rates",
+        api::hero_build_stats(&format!(
+            "hero_ids={hero_id}&min_matches=20{}",
+            window.query()
+        )),
+    );
     let ids: Vec<u32> = rows
         .iter()
         .map(|b| id32(b.hero_build.author_account_id))
@@ -1063,7 +1078,13 @@ pub fn lane_matchups(
     let (records, record_source) = api::lane_matchup_stats(&query)?;
     let sources = answer_sources([curve_source, record_source], &cat);
     Ok(lane_matchups_from(
-        &cat, &duo, &enemies, &curves, &records, sources,
+        &cat,
+        &duo,
+        &enemies,
+        min_matches,
+        &curves,
+        &records,
+        sources,
     ))
 }
 
@@ -1100,6 +1121,7 @@ fn lane_matchups_from(
     cat: &Catalog,
     duo: &[u32],
     enemies: &[u32],
+    min_matches: u32,
     curves: &[LaneSoulCurve],
     records: &[LaneMatchupStats],
     sources: Vec<Source>,
@@ -1124,7 +1146,9 @@ fn lane_matchups_from(
                 .zip(&c.sample_matches)
                 .zip(c.net_worth_diff.iter().zip(&c.net_worth_diff_std))
                 .enumerate()
-                .filter(|(_, ((_, matches), _))| **matches > 0)
+                // The API applies min_matches to the matchup; late snapshots rest on the matchups
+                // that lasted, so each point needs as many.
+                .filter(|(_, ((_, matches), _))| **matches >= i64::from(min_matches.max(1)))
                 .map(|(i, ((&t, &matches), (&lead, &spread)))| LanePoint {
                     at: mmss(u64::try_from(t).unwrap_or_default()),
                     matches,
@@ -1595,7 +1619,8 @@ mod tests {
         let (mut curves, records) = lane_fixtures();
         let cat = lane_catalog();
         // Enemies in another order than the API's ascending pair still find the row.
-        let lanes = lane_matchups_from(&cat, &[76, 11], &[85, 84], &curves, &records, Vec::new());
+        let lanes =
+            lane_matchups_from(&cat, &[76, 11], &[85, 84], 1, &curves, &records, Vec::new());
         assert_eq!(
             serde_json::to_value(&lanes).unwrap(),
             serde_json::json!({
@@ -1622,8 +1647,25 @@ mod tests {
         // empty.
         curves[0].sample_matches[4] = 0;
         curves[0].stats.clear();
-        let lanes = lane_matchups_from(&cat, &[11, 76], &[84, 85], &curves, &records, Vec::new());
+        let lanes =
+            lane_matchups_from(&cat, &[11, 76], &[84, 85], 1, &curves, &records, Vec::new());
         assert_eq!(lanes.points.len(), 4);
+        // A late snapshot on 4 matchups (as 55:00 is live) stays out at min_matches 30.
+        let c = &mut curves[0];
+        (c.sample_matches[4], c.sample_times_s[4]) = (4, 3300);
+        let lanes = lane_matchups_from(
+            &cat,
+            &[11, 76],
+            &[84, 85],
+            30,
+            &curves,
+            &records,
+            Vec::new(),
+        );
+        assert_eq!(lanes.points.last().unwrap().at, "12:00");
+        let lanes =
+            lane_matchups_from(&cat, &[11, 76], &[84, 85], 4, &curves, &records, Vec::new());
+        assert_eq!(lanes.points.last().unwrap().at, "55:00");
         assert_eq!(lanes.points[3].at, "12:00");
         assert_eq!(lanes.points[3].damage_lead, None);
     }
@@ -1633,7 +1675,7 @@ mod tests {
         let (curves, records) = lane_fixtures();
         let cat = lane_catalog();
         // Rows of another matchup (here: the duo against anyone) don't count.
-        let lanes = lane_matchups_from(&cat, &[11, 76], &[], &curves, &records, Vec::new());
+        let lanes = lane_matchups_from(&cat, &[11, 76], &[], 1, &curves, &records, Vec::new());
         assert_eq!(
             serde_json::to_value(&lanes).unwrap(),
             serde_json::json!({
@@ -1645,7 +1687,7 @@ mod tests {
                 "sources": [],
             })
         );
-        let lanes = lane_matchups_from(&cat, &[11, 76], &[84, 85], &[], &[], Vec::new());
+        let lanes = lane_matchups_from(&cat, &[11, 76], &[84, 85], 1, &[], &[], Vec::new());
         assert_eq!((lanes.matches, lanes.points.len()), (0, 0));
     }
 

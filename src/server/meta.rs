@@ -27,7 +27,8 @@ pub struct BuildsArgs {
     #[garde(length(chars, min = 1, max = 50))]
     pub hero: String,
     /// Only the build with this id, e.g. a player's `hero_build_id` from `match_player`; the answer
-    /// then lists the build's items.
+    /// then lists the build's items. An id the API's build database lacks (often a low one, such
+    /// as 3 or 27) gives an empty list.
     #[garde(inner(range(min = 1)))]
     pub build_id: Option<u32>,
     /// Only builds whose name contains this text.
@@ -197,8 +198,9 @@ pub struct LaneMatchupsArgs {
     #[serde(default = "default_window_days")]
     #[garde(range(min = 1, max = 365))]
     pub days: u32,
-    /// Answer with `matches` 0 and no points when the duos met in fewer lanes. Few lanes give a
-    /// rough mean: say how many the answer rests on.
+    /// Answer with `matches` 0 and no points when the duos met in fewer lanes, and leave out the
+    /// late snapshots fewer of them lasted to. Few lanes give a rough mean: say how many the answer
+    /// rests on.
     #[serde(default = "default_thirty")]
     #[garde(range(min = 1))]
     pub min_matches: u32,
